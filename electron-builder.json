@@ -1,0 +1,44 @@
+{
+  "appId": "com.madsuite.desktop-agent",
+  "productName": "MADSuite",
+  "directories": {
+    "output": "dist",
+    "buildResources": "build"
+  },
+  "files": [
+    "main.js",
+    "preload.js",
+    "renderer/**/*",
+    "node_modules/**/*",
+    "package.json",
+    "src/**/*",
+    {
+      "from": "../frontend/build",
+      "to": "frontend-dist",
+      "filter": ["**/*"]
+    }
+  ],
+  "extraFiles": [
+    {
+      "from": "../scripts",
+      "to": "scripts",
+      "filter": ["reset-local-data.ps1", "Nettoyer_MADSuite.bat"]
+    }
+  ],
+  "publish": [
+    {
+      "provider": "generic",
+      "url": "${AGENT_UPDATE_URL}"
+    }
+  ],
+  "win": {
+    "target": "nsis",
+    "icon": "icon.ico",
+    "verifyUpdateCodeSignature": true,
+    "signtoolOptions": {
+      "certificateFile": "${CERT_FILE}",
+      "certificatePassword": "${CERT_PASSWORD}",
+      "publisherName": "MAD"
+    }
+  }
+}

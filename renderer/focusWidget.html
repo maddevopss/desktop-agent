@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Focus Widget</title>
+  <style>
+    body {font-family: 'Inter', sans-serif; background: rgba(255,255,255,0.1); backdrop-filter: blur(10px); color: #fff; margin:0; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%;}
+    .timer {font-size: 2.5rem; margin: 10px;}
+    button {background:#22c55e; border:none; border-radius:8px; padding:10px 20px; color:#fff; font-weight:bold; cursor:pointer; margin:5px;}
+    .revenue {margin-top:10px; font-size:1.2rem;}
+  </style>
+</head>
+<body>
+  <div class="timer" id="timer">00:00</div>
+  <button id="startBtn">Démarrer</button>
+  <button id="stopBtn" disabled>Arrêter</button>
+  <div class="revenue" id="revenue">Revenu: 0 €</div>
+  <script>
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const timerEl = document.getElementById('timer');
+    const revenueEl = document.getElementById('revenue');
+    let intervalId = null;
+    let seconds = 0;
+    let isRunning = false;
+    let hourlyRate = 20; // Default, will be updated via settings
+    let pomodoroDuration = 25 * 60; // 25 min in seconds
+
+    // Calculate revenue based on elapsed time and hourly rate
+    function updateRevenueDisplay() {
+      const earned = (seconds / 3600) * hourlyRate;
+      revenueEl.textContent = `Revenu: ${earned.toFixed(2)} €`;
+    }
+
+    function updateTimer() {
+      if (isRunning) {
+        seconds++;
+        renderTime();
+        updateRevenueDisplay();
+        
+        // Sync state to other windows/devices via IPC
+        if (window.agentAPI && window.agentAPI.timerSync) {
+          window.agentAPI.timerSync({ isRunning, seconds });
+        }
+      }
+    }
+
+    function renderTime() {
+      const mins = String(Math.floor(seconds/60)).padStart(2,'0');
+      const secs = String(seconds%60).padStart(2,'0');
+      timerEl.textContent = `${mins}:${secs}`;
+    }
+
+    async function refreshRevenue() {
+      try {
+        if (window.agentAPI && window.agentAPI.getRevenue) {
+          const data = await window.agentAPI.getRevenue();
+          // Keep existing logic if desired, or override with local calculation
+          updateRevenueDisplay();
+        }
+      } catch (e) { console.error(e); }
+    }
+
+    function startTimer() {
+      if (!isRunning) {
+        isRunning = true;
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        if (!intervalId) {
+          intervalId = setInterval(updateTimer, 1000);
+        }
+      }
+    }
+
+    function stopTimer() {
+      if (isRunning) {
+        isRunning = false;
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    }
+
+    startBtn.addEventListener('click', async () => {
+      startTimer();
+      if (window.agentAPI) {
+        await window.agentAPI.startTask({ projectId: 1, description: 'Focus session' });
+        window.agentAPI.timerCommand({ action: 'start' });
+      }
+    });
+
+    stopBtn.addEventListener('click', async () => {
+      stopTimer();
+      if (window.agentAPI) {
+        await window.agentAPI.stopTask();
+        window.agentAPI.timerCommand({ action: 'stop' });
+      }
+      seconds = 0;
+      renderTime();
+      updateRevenueDisplay();
+    });
+
+    if (window.agentAPI) {
+      window.agentAPI.onTimerUpdated((payload) => {
+        // Only accept sync if we are not the one running the interval, 
+        // or just force sync to keep it exact.
+        if (payload) {
+          seconds = payload.seconds;
+          renderTime();
+          updateRevenueDisplay();
+        }
+      });
+
+      window.agentAPI.onTimerCommand((payload) => {
+        if (payload.action === 'start') {
+          startTimer();
+        } else if (payload.action === 'stop') {
+          stopTimer();
+          seconds = 0;
+          renderTime();
+          updateRevenueDisplay();
+        }
+      });
+    }
+
+    // Initial load
+    refreshRevenue();
+  </script>
+</body>
+</html>

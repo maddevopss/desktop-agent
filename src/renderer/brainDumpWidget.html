@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Brain Dump</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      overflow: hidden;
+    }
+    .container {
+      background: rgba(30, 30, 35, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 15px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+    }
+    input {
+      width: 100%;
+      background: transparent;
+      border: none;
+      color: white;
+      font-size: 1.2rem;
+      outline: none;
+    }
+    input::placeholder {
+      color: rgba(255, 255, 255, 0.4);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <input type="text" id="dumpInput" placeholder="🧠 Une pensée parasite ? Tape Entrée..." autofocus>
+  </div>
+  <script>
+    const input = document.getElementById('dumpInput');
+    input.addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter' && input.value.trim() !== '') {
+        const text = input.value;
+        input.value = '';
+        
+        // Envoi au backend local/API via l'agent
+        try {
+          await window.agentAPI.sendBrainDump(text);
+        } catch (err) {
+          console.error(err);
+        }
+        
+        // Cacher la fenêtre
+        window.agentAPI.hideBrainDumpWidget();
+      } else if (e.key === 'Escape') {
+        window.agentAPI.hideBrainDumpWidget();
+      }
+    });
+    
+    // Focus automatique
+    window.addEventListener('focus', () => {
+      input.focus();
+    });
+  </script>
+</body>
+</html>

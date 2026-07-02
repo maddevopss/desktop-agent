@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>MADSuite Agent</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: #111827;
+        color: white;
+        padding: 30px;
+      }
+
+      input,
+      button {
+        width: 100%;
+        padding: 12px;
+        margin-top: 12px;
+        border-radius: 8px;
+        border: none;
+      }
+
+      button {
+        background: #22c55e;
+        cursor: pointer;
+        font-weight: bold;
+      }
+
+      .status {
+        margin-top: 20px;
+        color: #93c5fd;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>MADSuite Agent</h2>
+
+    <input id="email" type="email" placeholder="Email" />
+    <input id="password" type="password" placeholder="Mot de passe" />
+
+    <button id="loginFormBtn">Connexion</button>
+
+    <div class="status" id="status">Agent arrêté</div>
+
+    <div style="margin-top: 12px; color: #c7d2fe" id="reason">—</div>
+
+    <button id="refreshBtn" style="background: #3b82f6; margin-top: 16px">Relancer refresh</button>
+
+    <button id="exportDiagnosticsBtn" class="btn-secondary w-full" style="margin-top: 16px; background: #6b7280">
+      Exporter diagnostics
+    </button>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>
