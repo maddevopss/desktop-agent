@@ -1,0 +1,28 @@
+{
+  "appId": "com.madsuite.desktop-agent",
+  "productName": "MADSuite",
+  "directories": {
+    "output": "dist-ci",
+    "buildResources": "build"
+  },
+  "files": [
+    "main.js",
+    "preload.js",
+    "renderer/**/*",
+    "node_modules/**/*",
+    "package.json",
+    "src/**/*",
+    {
+      "from": "../frontend/build",
+      "to": "frontend-dist",
+      "filter": ["**/*"]
+    }
+  ],
+  "publish": null,
+  "win": {
+    "target": "nsis",
+    "icon": "icon.ico",
+    "verifyUpdateCodeSignature": true,
+    "sign": null
+  }
+}
