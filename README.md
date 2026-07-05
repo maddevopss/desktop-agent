@@ -53,6 +53,38 @@ npm test
 npm run build
 ```
 
+## MADPROOF checks
+
+Avant de pousser une correction desktop, exécuter :
+
+```bash
+npm run guard:gitignore
+npm run guard:hygiene
+npm run check:syntax
+```
+
+Validation complète locale :
+
+```bash
+npm run check:desktop
+```
+
+Validation de packaging CI non signé :
+
+```bash
+npm run build:ci
+```
+
+Les guards bloquent notamment :
+
+- règles `.gitignore` critiques manquantes;
+- `.env` réel;
+- installateurs générés;
+- outputs `dist/`, `dist-ci/`, `release/`;
+- matériel de signature comme `.p12`, `.pfx`, `.key`.
+
+Aucun certificat, installateur ou build généré ne doit être commité. Les releases signées doivent passer par un flux de release contrôlé, jamais par un commit direct.
+
 ## Flow d’authentification
 
 1. Le renderer appelle `window.agentAPI.login({ email, password })`.
@@ -91,6 +123,12 @@ cd ../frontend
 npm run build
 cd ../desktop-agent
 npm run build
+```
+
+Pour une validation CI sans signature :
+
+```bash
+npm run build:ci
 ```
 
 ## Dépannage
