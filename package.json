@@ -12,11 +12,14 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "check:syntax": "node --check main.js && node --check preload.js",
+    "check:desktop": "npm run check:syntax && npm test",
     "start:prod": "set \"AGENT_API_URL=http://localhost:5000\" && electron .",
     "build:frontend": "npm --prefix ../frontend run build",
     "prod:desktop": "npm run build",
     "cert:test": "powershell -NoProfile -ExecutionPolicy Bypass -File ../scripts/create-test-cert.ps1",
     "build": "npm run cert:test && npm run build:frontend && electron-builder",
+    "build:ci": "electron-builder --win nsis --publish never",
     "icons:gen": "npx electron-icon-builder --input=./icon.png --output=./build --flatten"
   },
   "dependencies": {
@@ -41,6 +44,7 @@
     "collectCoverageFrom": [
       "utils/**/*.js",
       "!**/node_modules/**"
-    ]
+    ],
+    "passWithNoTests": true
   }
 }
