@@ -11,13 +11,17 @@ const forbiddenPathPatterns = [
   /(^|[\\/]).*\.(exe|msi|dmg|AppImage|p12|pfx)$/i,
 ];
 
+function isAllowedEnvExample(relative) {
+  return relative === '.env.example' || relative.endsWith(`${path.sep}.env.example`) || relative.endsWith('/.env.example');
+}
+
 function walk(dir, files = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (ignoredDirs.has(entry.name)) continue;
     const fullPath = path.join(dir, entry.name);
     const relative = path.relative(repoRoot, fullPath);
 
-    if (forbiddenPathPatterns.some((pattern) => pattern.test(relative))) {
+    if (!isAllowedEnvExample(relative) && forbiddenPathPatterns.some((pattern) => pattern.test(relative))) {
       files.push(relative);
       continue;
     }
