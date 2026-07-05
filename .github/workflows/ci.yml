@@ -1,0 +1,58 @@
+name: Desktop Agent CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate desktop agent
+    runs-on: windows-latest
+
+    env:
+      AGENT_API_URL: http://localhost:5000
+      AGENT_UPDATE_URL: http://localhost:5000/updates
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+      ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: true
+
+    steps:
+      - name: Checkout desktop agent
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax and unit checks
+        run: npm run check:desktop
+
+      - name: Prepare minimal frontend build fixture
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force ..\frontend\build | Out-Null
+          Set-Content -Path ..\frontend\build\index.html -Value '<!doctype html><html><body><div id="root">MADSuite Desktop CI</div></body></html>'
+
+      - name: Build unsigned Windows package
+        run: npm run build:ci
+
+      - name: Upload build metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-agent-dist
+          path: dist/
+          if-no-files-found: ignore
+          retention-days: 7
