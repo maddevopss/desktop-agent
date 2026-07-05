@@ -19,7 +19,7 @@
     "prod:desktop": "npm run build",
     "cert:test": "powershell -NoProfile -ExecutionPolicy Bypass -File ../scripts/create-test-cert.ps1",
     "build": "npm run cert:test && npm run build:frontend && electron-builder",
-    "build:ci": "electron-builder --win nsis --publish never",
+    "build:ci": "electron-builder --config electron-builder.ci.json --win nsis --publish never",
     "icons:gen": "npx electron-icon-builder --input=./icon.png --output=./build --flatten"
   },
   "dependencies": {
