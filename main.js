@@ -44,7 +44,7 @@ try {
 }
 
 if (app.isPackaged && !process.env.AGENT_API_URL) {
-  console.error("AGENT_API_URL manquant en build packagé.");
+  logger.error("AGENT_API_URL manquant en build packagé.");
   process.exit(1);
 }
 
@@ -273,10 +273,19 @@ app.setAsDefaultProtocolClient?.("madsuite");
 function handleProtocolUrl(url) {
   try {
     const parsedUrl = new URL(url);
-    if (parsedUrl.host === "auth") {
-      const token = parsedUrl.searchParams.get("token");
-      if (token) windowManager.notifyRenderer("protocol-auth-token", { token });
+    if (parsedUrl.protocol !== "madsuite:" || parsedUrl.host !== "auth") return;
+
+    const protocolToken = parsedUrl.searchParams.get("token");
+    if (!protocolToken || !isUsableAccessToken(protocolToken)) {
+      logger.warn("Protocol auth token invalide ou manquant");
+      return;
     }
+
+    saveAccessToken(protocolToken);
+    resetAuthExpiredState();
+    transitionAuthOk("protocol auth");
+    startTrackingIfNeeded("PROTOCOL AUTH");
+    windowManager.notifyRenderer("protocol-auth-token", { authenticated: true });
   } catch (e) { logger.warn("Erreur parsing protocol URL", { error: e.message }); }
 }
 
@@ -352,7 +361,7 @@ if (!gotTheLock) {
   };
 
   if (process.env.NODE_ENV === "test" || process.env.JEST_WORKER_ID) {
-    runWhenReady().catch(e => console.error(e));
+    runWhenReady().catch(e => logger.error("runWhenReady failed", { error: e.message }));
   } else {
     app.whenReady().then(runWhenReady);
   }
