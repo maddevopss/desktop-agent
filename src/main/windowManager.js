@@ -23,6 +23,17 @@ function getBrainDumpWidget() {
   return brainDumpWidget;
 }
 
+function isAllowedNavigationUrl(targetUrl) {
+  try {
+    const parsed = new URL(targetUrl);
+    if (isDev && parsed.origin === FRONTEND_DEV_URL) return true;
+    if (parsed.protocol === "file:") return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function createWindow(isQuittingFn) {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -31,6 +42,9 @@ function createWindow(isQuittingFn) {
       preload: path.join(__dirname, "..", "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
     },
   });
 
@@ -46,6 +60,14 @@ function createWindow(isQuittingFn) {
     logger.info("Fenetre React chargee - React appelera agentAPI.restoreToken()");
   });
 
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  mainWindow.webContents.on("will-navigate", (event, targetUrl) => {
+    if (!isAllowedNavigationUrl(targetUrl)) {
+      event.preventDefault();
+      logger.warn("Navigation externe bloquee", { targetUrl });
+    }
+  });
+
   if (isDev) {
     logger.info(`Mode DEV: Chargement du frontend depuis ${FRONTEND_DEV_URL}`);
     mainWindow.loadURL(FRONTEND_DEV_URL);
@@ -57,8 +79,6 @@ function createWindow(isQuittingFn) {
       const opensDevTools = input.key === "F12" || (input.control && input.shift && input.key.toLowerCase() === "i");
       if (opensDevTools) event.preventDefault();
     });
-
-    mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
 
     const frontendBuildPath = app.isPackaged
       ? path.join(process.resourcesPath, "app.asar", "frontend-dist", "index.html")
@@ -129,5 +149,6 @@ module.exports = {
   toggleFocusWidget,
   toggleBrainDumpWidget,
   hideBrainDumpWidget,
-  destroyWidgets
+  destroyWidgets,
+  isAllowedNavigationUrl,
 };
