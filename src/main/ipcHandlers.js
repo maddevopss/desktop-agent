@@ -5,10 +5,71 @@ const fs = require("fs");
 const crypto = require("crypto");
 const logger = require("../utils/logger");
 
+const MAX_SOCKET_PAYLOAD_BYTES = 4096;
+const TIMER_SYNC_FIELDS = new Set([
+  "id",
+  "taskId",
+  "projectId",
+  "clientId",
+  "status",
+  "startedAt",
+  "stoppedAt",
+  "elapsedSeconds",
+  "source",
+]);
+const TIMER_COMMAND_FIELDS = new Set(["command", "id", "taskId", "source"]);
+const ALLOWED_TIMER_COMMANDS = new Set(["start", "stop", "pause", "resume", "sync"]);
+
 function ensureDirSync(dirPath) {
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
   }
+}
+
+function payloadSize(payload) {
+  return Buffer.byteLength(JSON.stringify(payload || {}), "utf8");
+}
+
+function pickAllowedFields(payload, allowedFields) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+
+  const sanitized = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (!allowedFields.has(key)) continue;
+    if (["string", "number", "boolean"].includes(typeof value) || value === null) {
+      sanitized[key] = typeof value === "string" ? value.slice(0, 500) : value;
+    }
+  }
+
+  return sanitized;
+}
+
+function sanitizeTimerSyncPayload(payload) {
+  const sanitized = pickAllowedFields(payload, TIMER_SYNC_FIELDS);
+  if (!sanitized) return null;
+  if (payloadSize(sanitized) > MAX_SOCKET_PAYLOAD_BYTES) return null;
+  return sanitized;
+}
+
+function sanitizeTimerCommandPayload(payload) {
+  const sanitized = pickAllowedFields(payload, TIMER_COMMAND_FIELDS);
+  if (!sanitized) return null;
+  if (!ALLOWED_TIMER_COMMANDS.has(sanitized.command)) return null;
+  if (payloadSize(sanitized) > MAX_SOCKET_PAYLOAD_BYTES) return null;
+  return sanitized;
+}
+
+function sanitizeDiagnosticsConfig(config = {}) {
+  return {
+    apiUrlConfigured: Boolean(config.apiUrl),
+    platform: config.platform,
+    trackingInterval: config.trackingInterval,
+    privacySettings: {
+      trackingEnabled: config.privacySettings?.trackingEnabled === true,
+      ignoredAppsCount: Array.isArray(config.privacySettings?.ignoredApps) ? config.privacySettings.ignoredApps.length : 0,
+      ignoredKeywordsCount: Array.isArray(config.privacySettings?.ignoredKeywords) ? config.privacySettings.ignoredKeywords.length : 0,
+    },
+  };
 }
 
 function registerIpcHandlers(context) {
@@ -52,7 +113,7 @@ function registerIpcHandlers(context) {
   });
 
   ipcMain.handle("get-stored-token", () => {
-    return getStoreValue("token", null);
+    return null;
   });
 
   ipcMain.handle("restore-token", () => {
@@ -170,33 +231,39 @@ function registerIpcHandlers(context) {
   });
 
   ipcMain.handle("timer-sync", (event, payload) => {
-    setStoreValue("focusTimer", payload);
+    const safePayload = sanitizeTimerSyncPayload(payload);
+    if (!safePayload) throw new Error("Payload timer invalide.");
+
+    setStoreValue("focusTimer", safePayload);
     const sock = hubSocket();
     if (sock && sock.connected) {
-      sock.emit("hub:timer:update", payload);
+      sock.emit("hub:timer:update", safePayload);
     }
     const focusWidget = windowManager.getFocusWidget();
     const mainWindow = windowManager.getMainWindow();
     if (focusWidget && !focusWidget.isDestroyed() && event.sender !== focusWidget.webContents) {
-      focusWidget.webContents.send("timer-updated", payload);
+      focusWidget.webContents.send("timer-updated", safePayload);
     }
     if (mainWindow && !mainWindow.isDestroyed() && event.sender !== mainWindow.webContents) {
-      mainWindow.webContents.send("timer-updated", payload);
+      mainWindow.webContents.send("timer-updated", safePayload);
     }
   });
 
   ipcMain.handle("timer-command", (event, payload) => {
+    const safePayload = sanitizeTimerCommandPayload(payload);
+    if (!safePayload) throw new Error("Commande timer invalide.");
+
     const sock = hubSocket();
     if (sock && sock.connected) {
-      sock.emit("hub:timer:command", payload);
+      sock.emit("hub:timer:command", safePayload);
     }
     const focusWidget = windowManager.getFocusWidget();
     const mainWindow = windowManager.getMainWindow();
     if (focusWidget && !focusWidget.isDestroyed() && event.sender !== focusWidget.webContents) {
-      focusWidget.webContents.send("timer-command", payload);
+      focusWidget.webContents.send("timer-command", safePayload);
     }
     if (mainWindow && !mainWindow.isDestroyed() && event.sender !== mainWindow.webContents) {
-      mainWindow.webContents.send("timer-command", payload);
+      mainWindow.webContents.send("timer-command", safePayload);
     }
   });
 
@@ -210,11 +277,13 @@ function registerIpcHandlers(context) {
   });
 
   ipcMain.handle("send-brain-dump", async (event, text) => {
-    if (!text) return;
+    const content = String(text || "").trim().slice(0, 5000);
+    if (!content) return;
     const currentToken = getCurrentToken();
-    if (!currentToken) return;
+    if (!currentToken || !isUsableAccessToken(currentToken)) return;
     try {
-      await axios.post(`${API_URL}/api/intelligence/brain-dump`, { content: text }, {
+      await axios.post(`${API_URL}/api/intelligence/brain-dump`, { content }, {
+        timeout: 10000,
         headers: { Cookie: getAccessCookieHeader() }
       });
       logger.info("Brain dump envoyé depuis le desktop agent");
@@ -225,10 +294,10 @@ function registerIpcHandlers(context) {
 
   ipcMain.handle("set-autostart", (event, enabled) => {
     app.setLoginItemSettings({
-      openAtLogin: enabled,
+      openAtLogin: enabled === true,
       openAsHidden: true,
     });
-    return { success: true, enabled };
+    return { success: true, enabled: enabled === true };
   });
 
   ipcMain.handle("get-autostart", () => {
@@ -269,7 +338,7 @@ function registerIpcHandlers(context) {
           backendDownConsecutiveFailures: diagState.backendDownConsecutiveFailures,
           backendDownUntil: diagState.backendDownUntilMs ? new Date(diagState.backendDownUntilMs).toISOString() : null,
         },
-        config: diagState.config,
+        config: sanitizeDiagnosticsConfig(diagState.config),
         cachedCaptures: captureQueueService.getCaptureQueueSummary(),
       };
 
@@ -282,4 +351,9 @@ function registerIpcHandlers(context) {
   });
 }
 
-module.exports = { registerIpcHandlers };
+module.exports = {
+  registerIpcHandlers,
+  sanitizeTimerSyncPayload,
+  sanitizeTimerCommandPayload,
+  sanitizeDiagnosticsConfig,
+};
