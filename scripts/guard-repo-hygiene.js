@@ -1,8 +1,7 @@
-const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
-const ignoredDirs = new Set(['.git', 'node_modules']);
 const forbiddenPathPatterns = [
   /(^|[\\/])\.env($|\.)/,
   /(^|[\\/])dist([\\/]|$)/,
@@ -15,23 +14,18 @@ function isAllowedEnvExample(relative) {
   return relative === '.env.example' || relative.endsWith(`${path.sep}.env.example`) || relative.endsWith('/.env.example');
 }
 
-function walk(dir, files = []) {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (ignoredDirs.has(entry.name)) continue;
-    const fullPath = path.join(dir, entry.name);
-    const relative = path.relative(repoRoot, fullPath);
+function listGitVisibleFiles() {
+  const output = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
 
-    if (!isAllowedEnvExample(relative) && forbiddenPathPatterns.some((pattern) => pattern.test(relative))) {
-      files.push(relative);
-      continue;
-    }
-
-    if (entry.isDirectory()) walk(fullPath, files);
-  }
-  return files;
+  return output.split('\0').filter(Boolean);
 }
 
-const violations = walk(repoRoot);
+const violations = listGitVisibleFiles().filter(
+  (relative) => !isAllowedEnvExample(relative) && forbiddenPathPatterns.some((pattern) => pattern.test(relative)),
+);
 
 if (violations.length) {
   console.error('\nMADSuite desktop-agent artifact hygiene guard failed.\n');

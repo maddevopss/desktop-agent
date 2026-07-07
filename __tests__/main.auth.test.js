@@ -1,4 +1,8 @@
 const mockIpcHandlers = {};
+const os = require("os");
+const path = require("path");
+
+const testUserDataPath = path.join(os.tmpdir(), "madsuite-desktop-agent-test");
 
 const mockTracking = {
   startTracking: jest.fn(),
@@ -38,7 +42,7 @@ function loadMainWithMocks() {
     app: {
       getVersion: jest.fn(() => "1.0.0"),
       isPackaged: false,
-      getPath: jest.fn(() => "/tmp/madsuite-test"),
+      getPath: jest.fn(() => testUserDataPath),
       getAppPath: jest.fn(() => "/tmp/madsuite-test-app"),
       whenReady: jest.fn(() => ({
         then: jest.fn(),
@@ -117,7 +121,7 @@ function loadMainWithPersistentStore() {
     app: {
       getVersion: jest.fn(() => "1.0.0"),
       isPackaged: false,
-      getPath: jest.fn(() => "/tmp/madsuite-test"),
+      getPath: jest.fn(() => testUserDataPath),
       getAppPath: jest.fn(() => "/tmp/madsuite-test-app"),
       whenReady: jest.fn(() => ({
         then: (callback) => Promise.resolve(callback()),

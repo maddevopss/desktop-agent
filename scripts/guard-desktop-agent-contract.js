@@ -98,7 +98,7 @@ if (ipc && ipc.includes('return getStoreValue("token"')) {
   violations.push("IPC get-stored-token must not return raw token.");
 }
 
-if (ipc && !ipc.includes('ipcMain.handle("get-stored-token", () => {\n    return null;')) {
+if (ipc && !/ipcMain\.handle\("get-stored-token",\s*\(\)\s*=>\s*{\s*return null;\s*}\);/.test(ipc)) {
   violations.push("IPC get-stored-token must return null.");
 }
 
