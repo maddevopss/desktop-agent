@@ -10,13 +10,13 @@ Ce dépôt contient l’agent local MADSuite utilisé pour synchroniser le timer
 bleeband/SYSTEME_MAD
 ```
 
-Documents liés :
+Documents liés, à lire à la racine du dépôt `bleeband/SYSTEME_MAD` :
 
 ```text
-SYSTEME_MAD/00-SYSTEME-MAD/repos.md
-SYSTEME_MAD/00-SYSTEME-MAD/ai-context-madsuite-madproof.md
-SYSTEME_MAD/04-ADR/ADR-004-separation-repos-execution-madsuite.md
-SYSTEME_MAD/10-ROADMAP/madsuite-p2-hardening-board.md
+00-SYSTEME-MAD/repos.md
+00-SYSTEME-MAD/ai-context-madsuite-madproof.md
+04-ADR/ADR-004-separation-repos-execution-madsuite.md
+10-ROADMAP/madsuite-p2-hardening-board.md
 ```
 
 ## Règles MADPROOF obligatoires
@@ -78,7 +78,7 @@ npm run build:ci
 Les guards bloquent notamment :
 
 - règles `.gitignore` critiques manquantes;
-- `.env` réel;
+- fichier d’environnement réel;
 - installateurs générés;
 - outputs `dist/`, `dist-ci/`, `release/`;
 - matériel de signature comme `.p12`, `.pfx`, `.key`.
