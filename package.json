@@ -26,7 +26,7 @@
     "icons:gen": "npx electron-icon-builder --input=./icon.png --output=./build --flatten"
   },
   "dependencies": {
-    "active-win": "^8.2.1",
+    "active-win": "^9.0.0",
     "axios": "^1.18.1",
     "dotenv": "^17.4.2",
     "electron-store": "^11.0.2",
