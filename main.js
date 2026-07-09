@@ -190,7 +190,7 @@ async function tryRefreshAndResumeTracking() {
     registerBackendHealthy();
     startTrackingIfNeeded("TOKEN RAFRAICHI AUTOMATIQUEMENT");
     captureQueueService.flushCaptureQueueIfPossible().catch(() => {});
-    windowManager.notifyRenderer("agent-session-refreshed", { authenticated: true, user: refreshed.user || null });
+    windowManager.notifyRenderer("agent-token-refreshed", { authenticated: true, user: refreshed.user || null });
     return refreshed;
   } catch (err) {
     logger.warn("Refresh automatique echoue", { error: err.message });
