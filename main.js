@@ -134,7 +134,7 @@ function startTrackingIfNeeded(reason = "tracking") {
   if (trackingState === TRACKING_STATES.AUTH_EXPIRED) return logger.info(`${reason} - tracking refuse: auth expired`);
   if (tracking.isTracking()) return logger.info(`${reason} - tracking deja actif`);
   if (!getPrivacySettings().trackingEnabled) return logger.info(`${reason} - tracking desactive dans les reglages`);
-  
+
   const tok = getCurrentToken();
   if (trackingState === TRACKING_STATES.STARTING && (!tok || !isUsableAccessToken(tok))) {
     return logger.info(`${reason} - tracking en STARTING mais token pas usable, skip`);
@@ -144,7 +144,7 @@ function startTrackingIfNeeded(reason = "tracking") {
   tracking.startTracking();
   updateTrayMenuProxy();
   logger.info(`${reason} - tracking demarre`);
-  
+
   const sock = socketHub.getHubSocket();
   if (!sock) {
     socketHub.connectHubSocket({
@@ -190,7 +190,7 @@ async function tryRefreshAndResumeTracking() {
     registerBackendHealthy();
     startTrackingIfNeeded("TOKEN RAFRAICHI AUTOMATIQUEMENT");
     captureQueueService.flushCaptureQueueIfPossible().catch(() => {});
-    windowManager.notifyRenderer("agent-token-refreshed", { token: refreshed.token, user: refreshed.user });
+    windowManager.notifyRenderer("agent-session-refreshed", { authenticated: true, user: refreshed.user || null });
     return refreshed;
   } catch (err) {
     logger.warn("Refresh automatique echoue", { error: err.message });
@@ -259,7 +259,6 @@ function getExportDiagnosticsState() {
   };
 }
 
-// --- IPC Initialization ---
 ipcHandlers.registerIpcHandlers({
   authSession, startTrackingIfNeeded, getStoreValue, setStoreValue, deleteStoreValue,
   getCurrentToken, isUsableAccessToken, clearStoredToken, saveAccessToken, resetAuthExpiredState,
@@ -344,7 +343,7 @@ if (!gotTheLock) {
       transitionAuthOk("token existing"); startTrackingIfNeeded("TOKEN EXISTANT"); return;
     }
     if (token && !isUsableAccessToken(token)) { clearStoredToken(); }
-    
+
     if (hasRefreshCookie) {
       transitionStartIfAllowed([TRACKING_STATES.OFF, TRACKING_STATES.AUTH_EXPIRED], "startup refresh");
       try {
