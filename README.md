@@ -27,7 +27,7 @@ Il ne doit pas collecter par défaut : caméra, microphone, capture d’écran p
 
 ## Prérequis
 
-- Node.js compatible avec Electron 42
+- Node.js compatible avec Electron 43
 - Backend MADSuite démarré et accessible
 - Frontend build disponible pour le packaging si requis
 
@@ -60,6 +60,7 @@ Avant de pousser une correction desktop, exécuter :
 ```bash
 npm run guard:gitignore
 npm run guard:hygiene
+npm run guard:desktop-agent-contract
 npm run check:syntax
 ```
 
@@ -81,7 +82,8 @@ Les guards bloquent notamment :
 - fichier d’environnement réel;
 - installateurs générés;
 - outputs `dist/`, `dist-ci/`, `release/`;
-- matériel de signature comme `.p12`, `.pfx`, `.key`.
+- matériel de signature comme `.p12`, `.pfx`, `.key`;
+- régressions du contrat local desktop-agent.
 
 Aucun certificat, installateur ou build généré ne doit être commité. Les releases signées doivent passer par un flux de release contrôlé, jamais par un commit direct.
 
@@ -94,6 +96,12 @@ Aucun certificat, installateur ou build généré ne doit être commité. Les re
 5. Le tracking démarre avec l’access token courant.
 6. En cas d’erreur d’authentification, le main process tente un refresh.
 7. Si le refresh échoue, le token est nettoyé et le tracking s’arrête.
+
+## Boundary token main/renderer
+
+Le token d’accès doit rester dans le main process. Le renderer peut recevoir des signaux d’état comme `authenticated: true`, mais il ne doit pas recevoir, stocker ou renvoyer un access token rafraîchi.
+
+Les flux legacy où le renderer transmet un token au main process doivent être refusés ou supprimés.
 
 ## Tracking
 
