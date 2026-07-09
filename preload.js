@@ -22,7 +22,7 @@ contextBridge.exposeInMainWorld("agentAPI", {
   restoreToken: () => ipcRenderer.invoke("restore-token"),
   getStoredToken: () => ipcRenderer.invoke("get-stored-token"),
   refreshToken: () => ipcRenderer.invoke("refresh-token"),
-  agentSessionRefreshed: () => ipcRenderer.invoke("agent-session-refreshed"),
+  agentTokenRefreshed: (token) => ipcRenderer.invoke("agent-token-refreshed", token),
   agentRefreshFailed: () => ipcRenderer.invoke("agent-refresh-failed"),
   getTrackingInterval: () => ipcRenderer.invoke("get-tracking-interval"),
   setTrackingInterval: (seconds) => ipcRenderer.invoke("set-tracking-interval", seconds),
@@ -40,7 +40,7 @@ contextBridge.exposeInMainWorld("agentAPI", {
 
   onAgentStateChanged: (callback) => subscribe("agent-state-changed", callback),
 
-  onAgentSessionRefreshed: (callback) => subscribe("agent-session-refreshed", callback),
+  onAgentTokenRefreshed: (callback) => subscribe("agent-token-refreshed", callback),
   onSessionExpired: (callback) => subscribe("session-expired", callback),
   onAppClose: (callback) => subscribe("app-close", callback),
   onAuthExpired: (callback) => subscribe("auth-expired", callback),
