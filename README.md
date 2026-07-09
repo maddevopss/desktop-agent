@@ -27,7 +27,7 @@ Il ne doit pas collecter par défaut : caméra, microphone, capture d’écran p
 
 ## Prérequis
 
-- Node.js compatible avec Electron 42
+- Node.js compatible avec Electron 43
 - Backend MADSuite démarré et accessible
 - Frontend build disponible pour le packaging si requis
 
@@ -60,6 +60,7 @@ Avant de pousser une correction desktop, exécuter :
 ```bash
 npm run guard:gitignore
 npm run guard:hygiene
+npm run guard:desktop-agent-contract
 npm run check:syntax
 ```
 
@@ -81,7 +82,8 @@ Les guards bloquent notamment :
 - fichier d’environnement réel;
 - installateurs générés;
 - outputs `dist/`, `dist-ci/`, `release/`;
-- matériel de signature comme `.p12`, `.pfx`, `.key`.
+- matériel de signature comme `.p12`, `.pfx`, `.key`;
+- régressions du contrat local desktop-agent.
 
 Aucun certificat, installateur ou build généré ne doit être commité. Les releases signées doivent passer par un flux de release contrôlé, jamais par un commit direct.
 
