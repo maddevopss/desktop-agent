@@ -139,18 +139,15 @@ function registerIpcHandlers(context) {
   ipcMain.handle("refresh-token", async () => {
     const result = await authSession.refreshAccessTokenViaApi();
     startTrackingIfNeeded("REFRESH TOKEN");
-    return { success: true, authenticated: Boolean(result?.token), user: result?.user || null };
+    return result;
   });
 
-  ipcMain.handle("agent-session-refreshed", async () => {
+  ipcMain.handle("agent-token-refreshed", async (event, newToken) => {
+    if (!newToken) throw new Error("Nouveau token manquant.");
+    saveAccessToken(newToken);
     resetAuthExpiredState();
-    startTrackingIfNeeded("SESSION RAFRAICHIE PAR MAIN");
+    startTrackingIfNeeded("TOKEN RAFRAICHI PAR RENDERER");
     return { success: true };
-  });
-
-  ipcMain.handle("agent-token-refreshed", async () => {
-    logger.warn("agent-token-refreshed legacy refuse: le renderer ne doit pas transmettre de token.");
-    throw new Error("Flux legacy refuse. Le token doit rester dans le main process.");
   });
 
   ipcMain.handle("agent-refresh-failed", async () => {
