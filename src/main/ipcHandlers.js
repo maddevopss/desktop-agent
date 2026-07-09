@@ -139,15 +139,18 @@ function registerIpcHandlers(context) {
   ipcMain.handle("refresh-token", async () => {
     const result = await authSession.refreshAccessTokenViaApi();
     startTrackingIfNeeded("REFRESH TOKEN");
-    return result;
+    return { success: true, authenticated: Boolean(result?.token), user: result?.user || null };
   });
 
-  ipcMain.handle("agent-token-refreshed", async (event, newToken) => {
-    if (!newToken) throw new Error("Nouveau token manquant.");
-    saveAccessToken(newToken);
+  ipcMain.handle("agent-session-refreshed", async () => {
     resetAuthExpiredState();
-    startTrackingIfNeeded("TOKEN RAFRAICHI PAR RENDERER");
+    startTrackingIfNeeded("SESSION RAFRAICHIE PAR MAIN");
     return { success: true };
+  });
+
+  ipcMain.handle("agent-token-refreshed", async () => {
+    logger.warn("agent-token-refreshed legacy refuse: le renderer ne doit pas transmettre de token.");
+    throw new Error("Flux legacy refuse. Le token doit rester dans le main process.");
   });
 
   ipcMain.handle("agent-refresh-failed", async () => {
@@ -327,7 +330,7 @@ function registerIpcHandlers(context) {
       const file = path.join(diagnosticsDir, `diagnostics-${stamp}-${rand}.json`);
 
       const diagState = getExportDiagnosticsState();
-      
+
       const payload = {
         createdAt: new Date().toISOString(),
         trackingState: diagState.trackingState,
