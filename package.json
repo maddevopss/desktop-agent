@@ -9,7 +9,7 @@
   "scripts": {
     "start": "electron .",
     "rebuild": "electron-rebuild",
-    "test": "jest",
+    "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "guard:gitignore": "node scripts/guard-gitignore-policy.js",
@@ -31,6 +31,7 @@
     "dotenv": "^17.4.2",
     "electron-store": "^11.0.2",
     "electron-updater": "^6.8.9",
+    "jsonwebtoken": "^9.0.3",
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
