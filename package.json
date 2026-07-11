@@ -9,7 +9,7 @@
   "scripts": {
     "start": "electron .",
     "rebuild": "electron-rebuild",
-    "test": "jest",
+    "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "guard:gitignore": "node scripts/guard-gitignore-policy.js",
