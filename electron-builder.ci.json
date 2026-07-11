@@ -22,7 +22,6 @@
   "win": {
     "target": "nsis",
     "icon": "icon.ico",
-    "verifyUpdateCodeSignature": true,
-    "sign": null
+    "verifyUpdateCodeSignature": true
   }
 }
