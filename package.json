@@ -49,9 +49,14 @@
       "**/*.test.js"
     ],
     "collectCoverageFrom": [
+      "main.js",
+      "preload.js",
+      "src/**/*.js",
       "utils/**/*.js",
-      "!**/node_modules/**"
+      "!**/node_modules/**",
+      "!**/__tests__/**",
+      "!**/*.test.js"
     ],
-    "passWithNoTests": true
+    "passWithNoTests": false
   }
 }
