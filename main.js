@@ -4,7 +4,7 @@ const { config } = require("./src/main/config");
 const { createTrackingController } = require("./src/main/tracking");
 const { getOpenWindows } = require("./src/main/windowScanner");
 const tokenManager = require("./src/utils/tokenManager");
-const { createCaptureQueue } = require("./src/main/captureQueue");
+const { createDesktopRuntimeBootstrap } = require("./src/main/desktopRuntimeBootstrap");
 const { createAuthSession } = require("./src/main/authSession");
 const { createSessionPurge } = require("./src/main/sessionPurge");
 const logger = require("./src/utils/logger");
@@ -119,15 +119,23 @@ const authSession = createAuthSession({
   logger, isUsableAccessToken,
 });
 
-const captureQueueService = createCaptureQueue({
-  apiUrl: API_URL, app, getCurrentToken, isUsableAccessToken, logger, isQuitting: () => isQuitting,
+const desktopRuntime = createDesktopRuntimeBootstrap({
+  apiUrl: API_URL,
+  app,
+  activityQueue,
+  getCurrentToken,
+  isUsableAccessToken,
+  logger,
+  isQuitting: () => isQuitting,
   onQueueStatsChanged: (stats) => {
     const mw = windowManager.getMainWindow();
     if (mw && !mw.isDestroyed()) {
       mw.webContents.send("onSyncStatusUpdate", stats);
     }
-  }
+  },
 });
+const { captureQueueService } = desktopRuntime;
+desktopRuntime.registerProcessSignals();
 
 const purgeSession = createSessionPurge({
   stopTracking: () => tracking?.stopTracking(),
@@ -276,7 +284,6 @@ ipcHandlers.registerIpcHandlers({
   captureQueueService, getExportDiagnosticsState, API_URL, getAccessCookieHeader
 });
 
-process.on("SIGTERM", async () => { await activityQueue.forceFlush(); process.exit(0); });
 app.setAsDefaultProtocolClient?.("madsuite");
 function handleProtocolUrl(url) {
   try {
@@ -308,7 +315,7 @@ if (!gotTheLock) {
     const mw = windowManager.getMainWindow();
     if (mw && !mw.isDestroyed()) mw.webContents.send("app-close");
     tracking?.stopTracking();
-    captureQueueService.stop();
+    void desktopRuntime.shutdown("before-quit");
   });
 
   app.on("second-instance", (event, commandLine) => {
