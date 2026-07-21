@@ -11,13 +11,6 @@ function firstDefined(payload, keys) {
   return null;
 }
 
-function hashScope(organisationId, userId) {
-  return crypto
-    .createHash("sha256")
-    .update(`organisation:${organisationId}|user:${userId}`)
-    .digest("hex");
-}
-
 function deriveCaptureQueueScope(token) {
   if (typeof token !== "string" || !token.trim()) return null;
 
@@ -25,15 +18,10 @@ function deriveCaptureQueueScope(token) {
   try {
     payload = jwt.decode(token.trim());
   } catch {
-    payload = null;
-  }
-
-  if (!payload || typeof payload !== "object") {
-    if (process.env.NODE_ENV === "test" || process.env.JEST_WORKER_ID) {
-      return crypto.createHash("sha256").update(`test-token:${token.trim()}`).digest("hex");
-    }
     return null;
   }
+
+  if (!payload || typeof payload !== "object") return null;
 
   const organisationId = firstDefined(payload, [
     "organisation_id",
@@ -47,7 +35,10 @@ function deriveCaptureQueueScope(token) {
 
   if (!organisationId || !userId) return null;
 
-  return hashScope(organisationId, userId);
+  return crypto
+    .createHash("sha256")
+    .update(`organisation:${organisationId}|user:${userId}`)
+    .digest("hex");
 }
 
 function bindCaptureEntryToScope(entry, scope) {
