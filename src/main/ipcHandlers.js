@@ -96,6 +96,7 @@ function registerIpcHandlers(context) {
     getPrivacySettings,
     restartTrackingIfActive,
     finishSessionExpired,
+    purgeSession,
     tracking,
     updateTrayMenu,
     hubSocket,
@@ -205,13 +206,9 @@ function registerIpcHandlers(context) {
   });
 
   ipcMain.handle("stop-tracking", async () => {
-    tracking?.stopTracking();
-    resetAuthExpiredState();
-    clearStoredToken();
-    authSession.clearRefreshCookieMemory();
-    logger.info("Tracking arrete");
-    updateTrayMenu();
-    return { success: true };
+    const result = purgeSession("logout explicite");
+    logger.info("Tracking arrêté et session locale purgée");
+    return result;
   });
 
   ipcMain.handle("timer-sync", (event, payload) => {
