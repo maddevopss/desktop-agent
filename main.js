@@ -6,6 +6,7 @@ const { getOpenWindows } = require("./src/main/windowScanner");
 const tokenManager = require("./src/utils/tokenManager");
 const { createCaptureQueue } = require("./src/main/captureQueue");
 const { createAuthSession } = require("./src/main/authSession");
+const { createSessionPurge } = require("./src/main/sessionPurge");
 const logger = require("./src/utils/logger");
 const { isUsableAccessToken } = require("./src/main/auth");
 const activityQueue = require("./utils/activityQueue");
@@ -128,13 +129,24 @@ const captureQueueService = createCaptureQueue({
   }
 });
 
+const purgeSession = createSessionPurge({
+  stopTracking: () => tracking?.stopTracking(),
+  clearStoredToken,
+  clearRefreshCookieMemory: () => authSession.clearRefreshCookieMemory(),
+  disconnectHubSocket: () => socketHub.disconnectHubSocket(),
+  deleteStoreValue,
+  resetAuthExpiredState,
+  updateTrayMenu: () => updateTrayMenuProxy(),
+  logger,
+});
+
 // --- Actions Tracking ---
 function startTrackingIfNeeded(reason = "tracking") {
   if (!tracking) return logger.warn(`${reason} - tracking non initialise`);
   if (trackingState === TRACKING_STATES.AUTH_EXPIRED) return logger.info(`${reason} - tracking refuse: auth expired`);
   if (tracking.isTracking()) return logger.info(`${reason} - tracking deja actif`);
   if (!getPrivacySettings().trackingEnabled) return logger.info(`${reason} - tracking desactive dans les reglages`);
-  
+
   const tok = getCurrentToken();
   if (trackingState === TRACKING_STATES.STARTING && (!tok || !isUsableAccessToken(tok))) {
     return logger.info(`${reason} - tracking en STARTING mais token pas usable, skip`);
@@ -144,7 +156,7 @@ function startTrackingIfNeeded(reason = "tracking") {
   tracking.startTracking();
   updateTrayMenuProxy();
   logger.info(`${reason} - tracking demarre`);
-  
+
   const sock = socketHub.getHubSocket();
   if (!sock) {
     socketHub.connectHubSocket({
@@ -173,15 +185,11 @@ function restartTrackingIfActive(reason = "tracking") {
 }
 
 function finishSessionExpired(reason = "AUTH_EXPIRED") {
-  tracking?.stopTracking();
-  clearStoredToken();
-  authSession.clearRefreshCookieMemory();
-  resetAuthExpiredState();
-  socketHub.disconnectHubSocket();
+  purgeSession(reason);
   transitionAuthExpired(reason);
   windowManager.notifyRenderer("auth-expired");
   windowManager.notifyRenderer("session-expired");
-  logger.info(`Session expiree - ${reason} - token nettoye et tracking stoppe`);
+  logger.info(`Session expiree - ${reason} - données locales purgées`);
 }
 
 async function tryRefreshAndResumeTracking() {
@@ -263,7 +271,7 @@ function getExportDiagnosticsState() {
 ipcHandlers.registerIpcHandlers({
   authSession, startTrackingIfNeeded, getStoreValue, setStoreValue, deleteStoreValue,
   getCurrentToken, isUsableAccessToken, clearStoredToken, saveAccessToken, resetAuthExpiredState,
-  getTrackingInterval, getPrivacySettings, restartTrackingIfActive, finishSessionExpired,
+  getTrackingInterval, getPrivacySettings, restartTrackingIfActive, finishSessionExpired, purgeSession,
   tracking, updateTrayMenu: updateTrayMenuProxy, hubSocket: socketHub.getHubSocket, windowManager,
   captureQueueService, getExportDiagnosticsState, API_URL, getAccessCookieHeader
 });
@@ -344,7 +352,7 @@ if (!gotTheLock) {
       transitionAuthOk("token existing"); startTrackingIfNeeded("TOKEN EXISTANT"); return;
     }
     if (token && !isUsableAccessToken(token)) { clearStoredToken(); }
-    
+
     if (hasRefreshCookie) {
       transitionStartIfAllowed([TRACKING_STATES.OFF, TRACKING_STATES.AUTH_EXPIRED], "startup refresh");
       try {
