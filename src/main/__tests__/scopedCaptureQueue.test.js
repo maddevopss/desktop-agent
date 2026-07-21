@@ -16,6 +16,10 @@ function token(user, organisation) {
 }
 
 describe("adaptateur de file scoppée", () => {
+  beforeEach(() => {
+    createCaptureQueue.mockClear();
+  });
+
   test("crée une file physique différente par session", async () => {
     let currentToken = token("u1", "org-a");
     const queue = createScopedCaptureQueue({
@@ -64,9 +68,11 @@ describe("adaptateur de file scoppée", () => {
     queue.pushCaptureForLater("activity", {});
     currentToken = token("u2", "org-b");
     queue.pushCaptureForLater("activity", {});
-    queue.stop();
 
     const instances = createCaptureQueue.mock.results.map((result) => result.value);
+    queue.stop();
+
+    expect(instances).toHaveLength(2);
     for (const instance of instances) expect(instance.stop).toHaveBeenCalledTimes(1);
     expect(queue.getKnownScopeCount()).toBe(0);
   });
