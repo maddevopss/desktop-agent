@@ -48,11 +48,10 @@ jobs:
       - name: Build unsigned Windows package
         run: npm run build:ci
 
-      - name: Upload build metadata
-        if: always()
-        uses: actions/upload-artifact@v7
+      - name: Inspect and upload Windows artifact
+        if: success()
+        uses: ./.github/actions/inspect-windows-artifact
         with:
-          name: desktop-agent-dist-ci
-          path: dist-ci/
-          if-no-files-found: ignore
-          retention-days: 7
+          directory: dist-ci
+          manifest: dist-ci/artifact-manifest.json
+          artifact-name: desktop-agent-windows-proof
