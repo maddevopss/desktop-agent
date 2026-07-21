@@ -4,6 +4,14 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const logger = require("../utils/logger");
+const {
+  parseLoginCredentials,
+  parseToken,
+  parseTrackingInterval,
+  parsePrivacySettings,
+  parseBrainDump,
+  parseBoolean,
+} = require("../shared/ipcPayloadSchemas");
 
 const MAX_SOCKET_PAYLOAD_BYTES = 4096;
 const TIMER_SYNC_FIELDS = new Set([
@@ -90,47 +98,37 @@ function registerIpcHandlers(context) {
     finishSessionExpired,
     tracking,
     updateTrayMenu,
-    hubSocket, // function to get hub socket
+    hubSocket,
     windowManager,
     captureQueueService,
-    getExportDiagnosticsState, // callback for dynamic state
+    getExportDiagnosticsState,
     API_URL,
     getAccessCookieHeader,
   } = context;
 
-  ipcMain.handle("login", async (event, credentials) => {
-    const email = credentials?.email;
-    const password = credentials?.password;
-
-    if (!email || !password) {
-      throw new Error("Email et mot de passe requis.");
-    }
-
-    const result = await authSession.loginWithApi({ email, password });
+  ipcMain.handle("login", async (event, credentialsPayload) => {
+    const credentials = parseLoginCredentials(credentialsPayload);
+    const result = await authSession.loginWithApi(credentials);
     startTrackingIfNeeded("LOGIN REUSSI");
     logger.info("Login reussi - token sauvegarde");
     return result;
   });
 
-  ipcMain.handle("get-stored-token", () => {
-    return null;
-  });
+  ipcMain.handle("get-stored-token", () => null);
 
-  ipcMain.handle("restore-token", () => {
-    return authSession.restoreToken();
-  });
+  ipcMain.handle("restore-token", () => authSession.restoreToken());
 
   ipcMain.handle("start-tracking", async (event, receivedToken) => {
-    if (!receivedToken) throw new Error("Token manquant.");
+    const token = parseToken(receivedToken);
 
-    if (!isUsableAccessToken(receivedToken)) {
+    if (!isUsableAccessToken(token)) {
       clearStoredToken();
       authSession.clearRefreshCookieMemory();
       throw new Error("Token invalide ou sans organisation.");
     }
 
     resetAuthExpiredState();
-    saveAccessToken(receivedToken);
+    saveAccessToken(token);
     logger.info("Token recu et sauvegarde");
     startTrackingIfNeeded("START TRACKING");
     return { success: true };
@@ -143,8 +141,8 @@ function registerIpcHandlers(context) {
   });
 
   ipcMain.handle("agent-token-refreshed", async (event, newToken) => {
-    if (!newToken) throw new Error("Nouveau token manquant.");
-    saveAccessToken(newToken);
+    const token = parseToken(newToken, "Nouveau token");
+    saveAccessToken(token);
     resetAuthExpiredState();
     startTrackingIfNeeded("TOKEN RAFRAICHI PAR RENDERER");
     return { success: true };
@@ -159,12 +157,7 @@ function registerIpcHandlers(context) {
   ipcMain.handle("get-tracking-interval", () => getTrackingInterval());
 
   ipcMain.handle("set-tracking-interval", (event, seconds) => {
-    const parsedSeconds = Number(seconds);
-    const VALID_INTERVALS = [30, 60, 90, 120, 300];
-    if (!VALID_INTERVALS.includes(parsedSeconds)) {
-      throw new Error(`Intervalle invalide. Valeurs acceptees : ${VALID_INTERVALS.join(", ")}s`);
-    }
-
+    const parsedSeconds = parseTrackingInterval(seconds);
     setStoreValue("trackingInterval", parsedSeconds);
     restartTrackingIfActive("INTERVALLE MODIFIE");
     return { success: true, interval: parsedSeconds };
@@ -178,16 +171,7 @@ function registerIpcHandlers(context) {
   }));
 
   ipcMain.handle("set-privacy-settings", (event, nextSettings) => {
-    const normalized = {
-      trackingEnabled: nextSettings?.trackingEnabled === true,
-      ignoredApps: Array.isArray(nextSettings?.ignoredApps)
-        ? nextSettings.ignoredApps.map((value) => String(value).trim()).filter(Boolean).slice(0, 50)
-        : [],
-      ignoredKeywords: Array.isArray(nextSettings?.ignoredKeywords)
-        ? nextSettings.ignoredKeywords.map((value) => String(value).trim()).filter(Boolean).slice(0, 50)
-        : [],
-    };
-
+    const normalized = parsePrivacySettings(nextSettings);
     setStoreValue("privacySettings", normalized);
 
     if (normalized.trackingEnabled) startTrackingIfNeeded("REGLAGES CONFIDENTIALITE");
@@ -277,15 +261,18 @@ function registerIpcHandlers(context) {
   });
 
   ipcMain.handle("send-brain-dump", async (event, text) => {
-    const content = String(text || "").trim().slice(0, 5000);
-    if (!content) return;
+    const content = parseBrainDump(text);
     const currentToken = getCurrentToken();
     if (!currentToken || !isUsableAccessToken(currentToken)) return;
     try {
-      await axios.post(`${API_URL}/api/intelligence/brain-dump`, { content }, {
-        timeout: 10000,
-        headers: { Cookie: getAccessCookieHeader() }
-      });
+      await axios.post(
+        `${API_URL}/api/intelligence/brain-dump`,
+        { content },
+        {
+          timeout: 10000,
+          headers: { Cookie: getAccessCookieHeader() },
+        },
+      );
       logger.info("Brain dump envoyé depuis le desktop agent");
     } catch (err) {
       logger.error("Erreur lors de l'envoi du brain dump", { error: err.message });
@@ -293,11 +280,12 @@ function registerIpcHandlers(context) {
   });
 
   ipcMain.handle("set-autostart", (event, enabled) => {
+    const safeEnabled = parseBoolean(enabled, "enabled");
     app.setLoginItemSettings({
-      openAtLogin: enabled === true,
+      openAtLogin: safeEnabled,
       openAsHidden: true,
     });
-    return { success: true, enabled: enabled === true };
+    return { success: true, enabled: safeEnabled };
   });
 
   ipcMain.handle("get-autostart", () => {
@@ -327,7 +315,6 @@ function registerIpcHandlers(context) {
       const file = path.join(diagnosticsDir, `diagnostics-${stamp}-${rand}.json`);
 
       const diagState = getExportDiagnosticsState();
-      
       const payload = {
         createdAt: new Date().toISOString(),
         trackingState: diagState.trackingState,
