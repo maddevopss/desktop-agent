@@ -31,6 +31,13 @@ function createDesktopRuntimeBootstrap(options) {
   }
 
   function registerProcessSignals() {
+    if (
+      processTarget === process
+      && (process.env.NODE_ENV === "test" || process.env.JEST_WORKER_ID)
+    ) {
+      return false;
+    }
+
     const handleSignal = (signal) => async () => {
       await shutdown(signal);
       exit(0);
@@ -38,6 +45,7 @@ function createDesktopRuntimeBootstrap(options) {
 
     signalRegistry.register("SIGTERM", handleSignal("SIGTERM"));
     signalRegistry.register("SIGINT", handleSignal("SIGINT"));
+    return true;
   }
 
   return {
