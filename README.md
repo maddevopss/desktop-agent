@@ -19,6 +19,22 @@ Documents liés, à lire à la racine du dépôt `bleeband/SYSTEME_MAD` :
 10-ROADMAP/madsuite-p2-hardening-board.md
 ```
 
+## État de fondation V1
+
+La fermeture desktop V1 est fusionnée. Le dépôt dispose d’un évaluateur de certification, de tests de contrat et d’un registre de preuves pour les fonctions locales essentielles.
+
+Cette fermeture couvre notamment :
+
+- l’authentification et le renouvellement de session;
+- le démarrage et l’arrêt contrôlés du suivi;
+- la détection d’inactivité et la mise en lot des événements;
+- les filtres de confidentialité et le masquage des informations sensibles;
+- le comportement en cas d’indisponibilité du backend;
+- le packaging de validation non signé;
+- les règles de consentement, de transparence et de désactivation.
+
+La fermeture V1 ne constitue pas une autorisation d’élargir la collecte. Toute nouvelle capacité locale doit rester minimale, volontaire, compréhensible et documentée avant sa mise en service.
+
 ## Règles MADPROOF obligatoires
 
 L’agent desktop doit rester volontaire, transparent, désactivable, proportionné et compréhensible par l’utilisateur.
@@ -85,31 +101,31 @@ Les guards bloquent notamment :
 
 Aucun certificat, installateur ou build généré ne doit être commité. Les releases signées doivent passer par un flux de release contrôlé, jamais par un commit direct.
 
-## Flow d’authentification
+## Flux d’authentification
 
 1. Le renderer appelle `window.agentAPI.login({ email, password })`.
-2. Le main process appelle `POST /api/login`.
-3. Le backend retourne un access token et un cookie `refresh_token`.
-4. Le main process stocke le token. Le renderer ne reçoit qu’un indicateur d’état.
-5. Le tracking démarre avec l’access token courant.
-6. En cas d’erreur d’authentification, le main process tente un refresh.
-7. Si le refresh échoue, le token est nettoyé et le tracking s’arrête.
+2. Le processus principal appelle `POST /api/login`.
+3. Le backend retourne un jeton d’accès et un cookie `refresh_token`.
+4. Le processus principal stocke le jeton. Le renderer ne reçoit qu’un indicateur d’état.
+5. Le suivi démarre avec le jeton d’accès courant.
+6. En cas d’erreur d’authentification, le processus principal tente un renouvellement.
+7. Si le renouvellement échoue, le jeton est nettoyé et le suivi s’arrête.
 
-## Tracking
+## Suivi
 
 L’agent surveille la fenêtre active et applique des filtres de confidentialité avant envoi :
 
 - titres de fenêtres sensibles masqués;
-- tokens, bearer, mots de passe et secrets retirés;
+- jetons, autorisations Bearer, mots de passe et secrets retirés;
 - limitation des données de fenêtres en arrière-plan;
-- pause si aucun token valide n’est disponible.
+- pause si aucun jeton valide n’est disponible.
 
-Les réglages desktop doivent permettre de désactiver le tracking, choisir l’intervalle, ignorer des applications ou mots-clés, consulter la dernière capture locale et supprimer l’historique serveur de l’utilisateur.
+Les réglages desktop doivent permettre de désactiver le suivi, choisir l’intervalle, ignorer des applications ou mots-clés, consulter la dernière capture locale et supprimer l’historique serveur de l’utilisateur.
 
 ## Compatibilité plateforme
 
 - Windows : fenêtre active et liste des fenêtres ouvertes prises en charge.
-- macOS/Linux : la fenêtre active dépend des permissions OS; la liste complète peut rester vide volontairement.
+- macOS/Linux : la fenêtre active dépend des permissions du système; la liste complète peut rester vide volontairement.
 - Le scanner Windows peut utiliser Windows PowerShell ou `pwsh.exe`.
 
 ## Packaging Windows
@@ -133,11 +149,11 @@ npm run build:ci
 
 ## Dépannage
 
-- Tracking non démarré : reconnecter l’utilisateur.
-- Erreurs 401/403 répétées : vérifier le cookie refresh, `AGENT_API_URL` et l’organisation de l’utilisateur.
-- Fenêtres non détectées : vérifier les permissions OS et la compatibilité de `active-win`.
+- Suivi non démarré : reconnecter l’utilisateur.
+- Erreurs 401/403 répétées : vérifier le cookie de renouvellement, `AGENT_API_URL` et l’organisation de l’utilisateur.
+- Fenêtres non détectées : vérifier les permissions du système et la compatibilité de `active-win`.
 - Build natif qui échoue : relancer `npm run rebuild`.
 
 ## Statut
 
-Actif, avec garde-fous MADPROOF à maintenir avant toute release.
+Fondation et fermeture desktop V1 fusionnées. Le dépôt est en évolution continue sous garde-fous MADPROOF, avec priorité à la stabilité, au consentement et à la minimisation des données.
