@@ -1,0 +1,17 @@
+{
+  "sourceCommit": "replace-with-release-commit",
+  "artifactSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "approvedBy": "replace-with-human-approver",
+  "controls": {
+    "secure_bootstrap": true,
+    "session_scoped_storage": true,
+    "bounded_retries": true,
+    "immediate_tracking_pause": true,
+    "offline_queue_recovery": true,
+    "ipc_least_privilege": true,
+    "renderer_node_isolation": true,
+    "backend_unavailable_recovery": true,
+    "artifact_integrity_manifest": true,
+    "human_release_approval": true
+  }
+}
