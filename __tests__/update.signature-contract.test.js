@@ -19,11 +19,10 @@ describe("contrat de sécurité des mises à jour Desktop Agent", () => {
 
   test("la publication de production utilise uniquement la source générique configurée", () => {
     const config = readJson("electron-builder.json");
-
     expect(config.publish).toEqual([
       {
         provider: "generic",
-        url: "${AGENT_UPDATE_URL}",
+        url: "${env.AGENT_UPDATE_URL}",
       },
     ]);
   });
@@ -39,13 +38,15 @@ describe("contrat de sécurité des mises à jour Desktop Agent", () => {
   test("la configuration de production exige un certificat et un éditeur explicite", () => {
     const config = readJson("electron-builder.json");
 
+    const pkg = readJson("package.json");
+
     expect(config.win.signtoolOptions).toEqual(
       expect.objectContaining({
-        certificateFile: "${CERT_FILE}",
-        certificatePassword: "${CERT_PASSWORD}",
         publisherName: "MAD",
       }),
     );
+    expect(pkg.scripts.build).toContain("CSC_LINK=../scripts/certs/test-certificate.pfx");
+    expect(pkg.scripts.build).toContain("CSC_KEY_PASSWORD=password123");
   });
 
   test("aucune configuration ne désactive la validation de signature", () => {
