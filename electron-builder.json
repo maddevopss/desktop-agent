@@ -28,7 +28,7 @@
   "publish": [
     {
       "provider": "generic",
-      "url": "${AGENT_UPDATE_URL}"
+      "url": "${env.AGENT_UPDATE_URL}"
     }
   ],
   "win": {
@@ -36,8 +36,6 @@
     "icon": "icon.ico",
     "verifyUpdateCodeSignature": true,
     "signtoolOptions": {
-      "certificateFile": "${CERT_FILE}",
-      "certificatePassword": "${CERT_PASSWORD}",
       "publisherName": "MAD"
     }
   }
