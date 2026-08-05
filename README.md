@@ -1,5 +1,7 @@
 # MADSuite Desktop Agent
 
+**Version du package : 2.0.0.**
+
 Agent desktop officiel de MADSuite.
 
 Ce dépôt contient l’agent local MADSuite utilisé pour synchroniser le timer, transmettre certains événements applicatifs volontaires et soutenir le contexte opérationnel de l’utilisateur.
@@ -7,10 +9,10 @@ Ce dépôt contient l’agent local MADSuite utilisé pour synchroniser le timer
 ## Source de vérité
 
 ```text
-bleeband/SYSTEME_MAD
+maddevopss/SYSTEME_MAD
 ```
 
-Documents liés, à lire à la racine du dépôt `bleeband/SYSTEME_MAD` :
+Documents liés, à lire à la racine du dépôt `maddevopss/SYSTEME_MAD` :
 
 ```text
 00-SYSTEME-MAD/repos.md
@@ -43,7 +45,7 @@ Il ne doit pas collecter par défaut : caméra, microphone, capture d’écran p
 
 ## Prérequis
 
-- Node.js compatible avec Electron 42
+- Node.js compatible avec Electron 43
 - Backend MADSuite démarré et accessible
 - Frontend build disponible pour le packaging si requis
 
