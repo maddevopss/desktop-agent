@@ -180,7 +180,8 @@ function startTrackingIfNeeded(reason = "tracking") {
         const mw = windowManager.getMainWindow();
         if (fw && !fw.isDestroyed()) fw.webContents.send("timer-command", payload);
         if (mw && !mw.isDestroyed()) mw.webContents.send("timer-command", payload);
-      }
+      },
+      onConnectionState: (state) => windowManager.notifyRenderer("agent-state-changed", state),
     });
   }
 }
