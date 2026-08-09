@@ -2,9 +2,9 @@ const axios = require("axios");
 const logger = require("../utils/logger");
 const { shouldIgnoreActivity, getActivitySignature } = require("../utils/trackingFilter");
 
-const activityQueue = require("./trackingQueue");
+const trackingQueue = require("./trackingQueue");
 
-// NOTE: on utilise activityQueue pour batcher /api/activity/batch
+// NOTE: on utilise trackingQueue pour batcher /api/activity/batch
 
 const AXIOS_TIMEOUT = 5000;
 const MAX_RETRIES = 3;
@@ -131,6 +131,7 @@ function createTrackingController({
       return;
     }
 
+    const token = getToken();
     if (!activeWin || !token) return;
 
     const activeWindow = await activeWin();
@@ -167,26 +168,18 @@ function createTrackingController({
     payload.activity_signature = signature;
 
     if (signature === lastActivitySignature && lastActivityId) {
-      // Batch duration patch
-      activityQueue.add({
-        kind: "activity_duration_patch",
-        payload: {
-          activity_id: lastActivityId,
-          duration_seconds: intervalSeconds,
-          is_idle: payload.is_idle,
-          idle_seconds: idleSeconds,
-        },
+      trackingQueue.addActivityDurationPatch({
+        activityId: lastActivityId,
+        duration_seconds: intervalSeconds,
+        is_idle: payload.is_idle,
+        idle_seconds: idleSeconds,
       });
 
       logger.info("ACTIVITY DURATION QUEUED");
       return;
     }
 
-    // Batch activity post
-    activityQueue.add({
-      kind: "activity_post",
-      payload,
-    });
+    trackingQueue.addActivityPostFromPayload(payload);
 
     // On ne sait pas encore l'id tant que le batch n'est pas flush.
     // Garder lastActivityId null évite les patches avant insertion.
@@ -266,16 +259,7 @@ function createTrackingController({
       idle_seconds: getIdleSeconds(),
     };
 
-    // Batch windows logs
-    activityQueue.add({
-      kind: "activity_windows_post",
-      payload: {
-        windows: openWindows,
-        duration_seconds: intervalSeconds,
-        is_idle: windowsPayload.is_idle,
-        idle_seconds: windowsPayload.idle_seconds,
-      },
-    });
+    trackingQueue.addWindowLogsPost(windowsPayload);
 
     logger.info("WINDOW LOGS QUEUED", { reason: hasChanged ? "changed" : "throttled_tick" });
   }
