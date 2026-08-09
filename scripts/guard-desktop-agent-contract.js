@@ -129,7 +129,7 @@ if (ipc && !ipc.includes("timeout: 10000")) {
   violations.push("external IPC HTTP calls should keep a 10s timeout.");
 }
 
-if (socketHub && !socketHub.includes("query: { token }")) {
+if (socketHub && !socketHub.includes("auth: { token }")) {
   violations.push("socket hub must pass token explicitly for backend auth.");
 }
 
