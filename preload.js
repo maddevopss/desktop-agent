@@ -1,8 +1,75 @@
 const { contextBridge, ipcRenderer } = require("electron");
-const {
-  assertAllowedInvokeChannel,
-  assertAllowedSubscribeChannel,
-} = require("./src/shared/ipcChannels");
+
+/**
+ * Allowlists recopiees depuis src/shared/ipcChannels.js au lieu d'y etre importees.
+ *
+ * Ce preload tourne avec sandbox: true (recommandation Electron), et un preload sandboxe
+ * ne peut pas charger de module applicatif relatif : son `require` est limite a electron
+ * et a quelques modules natifs. Un import ferait donc echouer le preload au chargement,
+ * laissant window.agentAPI indefini.
+ *
+ * La duplication est volontaire et surveillee : __tests__/preloadChannels.drift.test.js
+ * echoue si ces listes divergent de src/shared/ipcChannels.js, qui reste la reference.
+ * Si ce preload finit par dependre de plusieurs modules, le remplacer par un bundling
+ * leger (esbuild) plutot que par un require.
+ */
+const INVOKE_CHANNELS = Object.freeze([
+  "login",
+  "start-tracking",
+  "stop-tracking",
+  "start-task",
+  "stop-task",
+  "toggle-focus-widget",
+  "timer-sync",
+  "timer-command",
+  "get-revenue",
+  "send-brain-dump",
+  "hide-brain-dump-widget",
+  "restore-token",
+  "get-stored-token",
+  "refresh-token",
+  "agent-token-refreshed",
+  "agent-refresh-failed",
+  "get-tracking-interval",
+  "set-tracking-interval",
+  "get-privacy-settings",
+  "set-privacy-settings",
+  "delete-activity-history",
+  "export-diagnostics",
+  "test-notification",
+  "get-autostart",
+  "set-autostart",
+]);
+
+const SUBSCRIBE_CHANNELS = Object.freeze([
+  "protocol-auth-token",
+  "agent-refresh-needed",
+  "agent-state-changed",
+  "agent-token-refreshed",
+  "session-expired",
+  "app-close",
+  "auth-expired",
+  "timer-updated",
+  "timer-command",
+  "onSyncStatusUpdate",
+]);
+
+const INVOKE_CHANNEL_SET = new Set(INVOKE_CHANNELS);
+const SUBSCRIBE_CHANNEL_SET = new Set(SUBSCRIBE_CHANNELS);
+
+function assertAllowedInvokeChannel(channel) {
+  if (!INVOKE_CHANNEL_SET.has(channel)) {
+    throw new Error(`Canal IPC invoke interdit : ${String(channel)}`);
+  }
+  return channel;
+}
+
+function assertAllowedSubscribeChannel(channel) {
+  if (!SUBSCRIBE_CHANNEL_SET.has(channel)) {
+    throw new Error(`Canal IPC subscribe interdit : ${String(channel)}`);
+  }
+  return channel;
+}
 
 function invoke(channel, ...args) {
   return ipcRenderer.invoke(assertAllowedInvokeChannel(channel), ...args);
@@ -66,4 +133,4 @@ contextBridge.exposeInMainWorld("agentAPI", {
   onSyncStatusUpdate: (callback) => subscribe("onSyncStatusUpdate", callback),
 });
 
-module.exports = { invoke, subscribe };
+module.exports = { invoke, subscribe, INVOKE_CHANNELS, SUBSCRIBE_CHANNELS };
