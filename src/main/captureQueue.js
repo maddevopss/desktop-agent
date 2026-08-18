@@ -3,6 +3,23 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
+// Les idees capturees via le widget Brain Dump sont irremplacables : contrairement a une
+// capture d'activite, re-echantillonnee en continu, une idee perdue l'est definitivement.
+// Ce kind est donc protege de l'eviction FIFO quand la file sature.
+const CAPTURE_KIND_BRAIN_DUMP = "brain_dump_capture";
+
+/**
+ * Retire de la file le plus ancien element evincable, en epargnant les captures de
+ * decharge mentale tant qu'il reste autre chose a sacrifier.
+ * @param {Array<{ kind?: string }>} items - File modifiee en place.
+ */
+function dropOldestEvictable(items) {
+  const index = items.findIndex((it) => it?.kind !== CAPTURE_KIND_BRAIN_DUMP);
+
+  // Plus rien d'autre a jeter : on sacrifie la plus ancienne idee, faute de mieux.
+  items.splice(index === -1 ? 0 : index, 1);
+}
+
 function createCaptureQueue({
   apiUrl,
   app,
@@ -156,11 +173,11 @@ function createCaptureQueue({
 
       const newItems = q.items.concat([entry]);
 
-      while (newItems.length > captureQueueMaxItems) newItems.shift();
+      while (newItems.length > captureQueueMaxItems) dropOldestEvictable(newItems);
 
       let bytes = Buffer.byteLength(JSON.stringify(newItems));
       while (bytes > captureQueueMaxBytes && newItems.length > 1) {
-        newItems.shift();
+        dropOldestEvictable(newItems);
         bytes = Buffer.byteLength(JSON.stringify(newItems));
       }
 
@@ -187,16 +204,51 @@ function createCaptureQueue({
     if (!currentTok || !isUsableAccessToken(currentTok)) return { flushed: 0 };
 
     const itemsToFlush = captureQueue.items.slice(0, 100);
+
+    // Les idees ne peuvent pas partir dans /api/activity/batch : elles ont leur propre
+    // endpoint et leur propre cle d'idempotence. On separe donc les deux flux.
+    const brainDumps = itemsToFlush.filter((it) => it?.kind === CAPTURE_KIND_BRAIN_DUMP);
+    const activityEvents = itemsToFlush.filter((it) => it?.kind !== CAPTURE_KIND_BRAIN_DUMP);
+
+    // On retire par identifiant et non par position : les deux flux echouent
+    // independamment, la file n'est donc plus consommee comme un simple prefixe.
+    const flushedIds = new Set();
     let flushed = 0;
 
-    try {
-      const authConfig = {
-        timeout: 15000,
-        headers: { Cookie: `access_token=${currentTok}` },
-        validateStatus: () => true,
-      };
+    const authConfig = {
+      timeout: 15000,
+      headers: { Cookie: `access_token=${currentTok}` },
+      validateStatus: () => true,
+    };
 
-      const payload = { events: itemsToFlush };
+    for (const item of brainDumps) {
+      try {
+        const response = await axios.post(
+          `${apiUrl}/api/brain-dump-captures`,
+          {
+            raw_text: item.payload?.raw_text,
+            source: item.payload?.source || "spotlight",
+            // L'id de l'entree sert de cle d'idempotence : si un POST a reussi cote
+            // serveur mais que la reponse a expire, le rejeu ne cree pas de doublon.
+            client_capture_id: item.payload?.client_capture_id || item.id,
+          },
+          authConfig,
+        );
+
+        if (!response || response.status < 200 || response.status >= 300) {
+          throw new Error(`Brain dump flush failed with status ${response?.status}`);
+        }
+
+        flushedIds.add(item.id);
+      } catch (err) {
+        // L'idee reste en file : elle sera rejouee au prochain flush.
+        logger.warn("BRAIN DUMP FLUSH FAILED", { error: err?.message });
+      }
+    }
+
+    if (activityEvents.length > 0) {
+      try {
+      const payload = { events: activityEvents };
       const response = await axios.post(`${apiUrl}/api/activity/batch`, payload, authConfig);
 
       if (!response || response.status < 200 || response.status >= 300) {
@@ -229,7 +281,7 @@ function createCaptureQueue({
             // 2. Distraction Awareness Layer (Smart Focus Shield)
             else if (response.data.hasActiveTimer === true) {
               const distractions = ['youtube', 'facebook', 'instagram', 'tiktok', 'reddit', 'twitter', 'x.com', 'netflix'];
-              const isDistracted = itemsToFlush.some(it => {
+              const isDistracted = activityEvents.some(it => {
                 if (it.kind === "activity_post" && it.payload) {
                   const txt = (it.payload.window_title + " " + it.payload.app_name).toLowerCase();
                   return distractions.some(d => txt.includes(d));
@@ -251,18 +303,23 @@ function createCaptureQueue({
       }
 
       if (failedEvents.length === 0) {
-        flushed = itemsToFlush.length;
-        captureQueue.items = captureQueue.items.slice(itemsToFlush.length);
+        activityEvents.forEach((it) => flushedIds.add(it.id));
       } else {
         logger.warn("BATCH FLUSH PARTIAL FAILURE - re-queuing failed events", {
           failedCount: failedEvents.length,
           failed: failedEvents,
         });
-        // do not slice/remove - keep failed items for retry
+        // do not remove - keep failed items for retry
       }
-    } catch (err) {
-      logger.warn("BATCH FLUSH FAILED", { error: err?.message });
-      // Keep items in queue on failure
+      } catch (err) {
+        logger.warn("BATCH FLUSH FAILED", { error: err?.message });
+        // Keep items in queue on failure
+      }
+    }
+
+    if (flushedIds.size > 0) {
+      captureQueue.items = captureQueue.items.filter((it) => !flushedIds.has(it.id));
+      flushed = flushedIds.size;
     }
 
     captureQueue.bytes = Buffer.byteLength(JSON.stringify(captureQueue.items));
@@ -302,4 +359,4 @@ function createCaptureQueue({
   };
 }
 
-module.exports = { createCaptureQueue };
+module.exports = { createCaptureQueue, CAPTURE_KIND_BRAIN_DUMP };

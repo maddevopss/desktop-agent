@@ -124,6 +124,31 @@ L’agent surveille la fenêtre active et applique des filtres de confidentialit
 
 Les réglages desktop doivent permettre de désactiver le suivi, choisir l’intervalle, ignorer des applications ou mots-clés, consulter la dernière capture locale et supprimer l’historique serveur de l’utilisateur.
 
+## Décharge mentale (widget Brain Dump)
+
+Un raccourci global ouvre une barre flottante permettant de capturer une pensée parasite
+sans quitter l’application en cours, puis de la retrouver dans l’inbox du Dashboard.
+
+- Raccourci : `Ctrl+Shift+Espace`, avec repli automatique sur `Ctrl+Alt+Espace` si une
+  autre application détient déjà la combinaison. L’accélérateur retenu est journalisé, et
+  libéré via `globalShortcut.unregisterAll()` sur `will-quit`.
+- `Entrée` capture et referme immédiatement, sans attendre la réponse réseau; `Échap` ou
+  la perte de focus annule.
+- L’idée part sur `POST /api/brain-dump-captures` (`{ raw_text, source: "spotlight" }`).
+  Session expirée, backend injoignable ou réponse en erreur basculent vers la file offline
+  persistante, rejouée plus tard avec une clé d’idempotence (`client_capture_id`) pour ne
+  pas créer de doublon.
+- Les captures de décharge mentale sont exemptées de l’éviction FIFO de cette file : une
+  capture d’activité est ré-échantillonnée en continu, une idée ne l’est pas.
+- Le flush sépare les deux flux : les idées ne transitent pas par `/api/activity/batch`, et
+  l’échec d’un flux ne bloque plus l’autre (retrait de la file par identifiant).
+- Aucun appel IA à l’écriture. Le découpage en micro-actions est déclenché explicitement
+  depuis le Dashboard.
+- Le widget utilise un preload dédié (`src/widgets/brainDumpPreload.js`, deux canaux
+  seulement) et non le `preload.js` principal, et tourne en `sandbox: true`.
+- Limite connue : sur un jeu en plein écran exclusif, le raccourci se déclenche mais la
+  barre ne peut pas s’afficher par-dessus.
+
 ## Compatibilité plateforme
 
 - Windows : fenêtre active et liste des fenêtres ouvertes prises en charge.

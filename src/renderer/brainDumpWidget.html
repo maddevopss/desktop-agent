@@ -2,66 +2,59 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
+  <!-- Le script est externalise pour permettre une CSP sans 'unsafe-inline'. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'">
   <title>Brain Dump</title>
   <style>
-    body {
+    /* Fond opaque cote fenetre : la transparence Electron clignote sur Windows 11
+       quand la fenetre est aussi alwaysOnTop. */
+    html, body {
       margin: 0;
       padding: 0;
-      background: transparent;
+      height: 100%;
+      background: #0f172a;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       overflow: hidden;
+      user-select: none;
     }
     .container {
-      background: rgba(30, 30, 35, 0.95);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 12px;
-      padding: 15px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      box-sizing: border-box;
       display: flex;
       align-items: center;
+      gap: 14px;
+      height: 100%;
+      padding: 0 20px;
+      border: 2px solid #6366f1;
     }
     input {
-      width: 100%;
+      flex: 1;
       background: transparent;
       border: none;
       color: white;
       font-size: 1.2rem;
+      font-family: inherit;
       outline: none;
+      user-select: text;
     }
     input::placeholder {
       color: rgba(255, 255, 255, 0.4);
+    }
+    .hint {
+      color: #475569;
+      font-size: 0.7rem;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <input type="text" id="dumpInput" placeholder="🧠 Une pensée parasite ? Tape Entrée..." autofocus>
+    <input type="text" id="dumpInput" maxlength="5000" autocomplete="off" spellcheck="false"
+           placeholder="🧠 Une pensée parasite ? Tape Entrée..."
+           aria-label="Idée à capturer" autofocus>
+    <span class="hint">ENTRÉE capture · ÉCHAP annule</span>
   </div>
-  <script>
-    const input = document.getElementById('dumpInput');
-    input.addEventListener('keydown', async (e) => {
-      if (e.key === 'Enter' && input.value.trim() !== '') {
-        const text = input.value;
-        input.value = '';
-        
-        // Envoi au backend local/API via l'agent
-        try {
-          await window.agentAPI.sendBrainDump(text);
-        } catch (err) {
-          console.error(err);
-        }
-        
-        // Cacher la fenêtre
-        window.agentAPI.hideBrainDumpWidget();
-      } else if (e.key === 'Escape') {
-        window.agentAPI.hideBrainDumpWidget();
-      }
-    });
-    
-    // Focus automatique
-    window.addEventListener('focus', () => {
-      input.focus();
-    });
-  </script>
+  <script src="brainDumpWidget.js"></script>
 </body>
 </html>

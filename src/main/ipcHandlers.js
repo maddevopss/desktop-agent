@@ -12,6 +12,7 @@ const {
   parseBrainDump,
   parseBoolean,
 } = require("../shared/ipcPayloadSchemas");
+const { CAPTURE_KIND_BRAIN_DUMP } = require("./captureQueue");
 
 const MAX_SOCKET_PAYLOAD_BYTES = 4096;
 const TIMER_SYNC_FIELDS = new Set([
@@ -257,22 +258,50 @@ function registerIpcHandlers(context) {
     windowManager.hideBrainDumpWidget();
   });
 
+  /**
+   * Capture une pensée parasite depuis le widget Brain Dump.
+   *
+   * Aucun échec ne doit faire disparaître l'idée : session expirée, backend injoignable
+   * ou réponse en erreur basculent tous vers la file offline persistante, qui rejouera
+   * la capture avec sa clé d'idempotence. Une idée perdue une seule fois suffit à ce que
+   * l'utilisateur n'ose plus se reposer sur l'outil.
+   */
   ipcMain.handle("send-brain-dump", async (event, text) => {
     const content = parseBrainDump(text);
     const currentToken = getCurrentToken();
-    if (!currentToken || !isUsableAccessToken(currentToken)) return;
+
+    const queueForLater = (reason) => {
+      captureQueueService.pushCaptureForLater(CAPTURE_KIND_BRAIN_DUMP, {
+        raw_text: content,
+        source: "spotlight",
+      });
+      logger.info("BRAIN DUMP QUEUED", { reason });
+      return { ok: true, queued: true };
+    };
+
+    if (!currentToken || !isUsableAccessToken(currentToken)) {
+      return queueForLater("no usable token");
+    }
+
     try {
-      await axios.post(
-        `${API_URL}/api/intelligence/brain-dump`,
-        { content },
+      const response = await axios.post(
+        `${API_URL}/api/brain-dump-captures`,
+        { raw_text: content, source: "spotlight" },
         {
           timeout: 10000,
           headers: { Cookie: getAccessCookieHeader() },
+          validateStatus: () => true,
         },
       );
+
+      if (!response || response.status < 200 || response.status >= 300) {
+        throw new Error(`Brain dump refused with status ${response?.status}`);
+      }
+
       logger.info("Brain dump envoyé depuis le desktop agent");
+      return { ok: true, queued: false };
     } catch (err) {
-      logger.error("Erreur lors de l'envoi du brain dump", { error: err.message });
+      return queueForLater(err.message);
     }
   });
 
