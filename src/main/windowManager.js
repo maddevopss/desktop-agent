@@ -39,7 +39,10 @@ function createWindow(isQuittingFn) {
     width: 1400,
     height: 900,
     webPreferences: {
-      preload: path.join(__dirname, "..", "preload.js"),
+      // Deux niveaux : ce fichier est dans src/main/, le preload est a la racine du projet.
+      // Un seul ".." pointait vers src/preload.js, qui n'existe pas — window.agentAPI
+      // restait alors indefini dans la fenetre principale.
+      preload: path.join(__dirname, "..", "..", "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -119,7 +122,11 @@ function toggleBrainDumpWidget() {
     if (brainDumpWidget.isVisible()) {
       brainDumpWidget.hide();
     } else {
+      // On recentre sur l'ecran actif, et surtout on redonne le focus : sans lui la
+      // barre s'affiche mais ne recoit aucune frappe, et le handler blur la refermerait.
+      brainDumpWidget.center();
       brainDumpWidget.show();
+      brainDumpWidget.focus();
     }
   }
   return brainDumpWidget;
