@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'"
+    />
+    <title>Décharge mentale</title>
+    <style>
+      /* Fenêtre opaque volontairement : transparent + alwaysOnTop provoque un
+         clignotement à l'affichage sur Windows 11. On garde un rectangle net. */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #0f172a;
+        font-family: "Segoe UI", Arial, sans-serif;
+        user-select: none;
+      }
+
+      .bar {
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        height: 100%;
+        padding: 0 20px;
+        border: 2px solid #6366f1;
+      }
+
+      .icon {
+        font-size: 24px;
+        line-height: 1;
+      }
+
+      input {
+        flex: 1;
+        background: transparent;
+        border: none;
+        outline: none;
+        color: #f8fafc;
+        font-size: 19px;
+        font-family: inherit;
+        user-select: text;
+      }
+
+      input::placeholder {
+        color: #64748b;
+      }
+
+      .hint {
+        color: #475569;
+        font-size: 11px;
+        letter-spacing: 0.04em;
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="bar">
+      <span class="icon" aria-hidden="true">🧠</span>
+      <input
+        id="idea"
+        type="text"
+        maxlength="500"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="Vide ta tête… (ex. penser à payer l'hydro)"
+        aria-label="Idée à capturer"
+      />
+      <span class="hint">ENTRÉE pour capturer · ÉCHAP pour annuler</span>
+    </div>
+    <script src="spotlight.js"></script>
+  </body>
+</html>

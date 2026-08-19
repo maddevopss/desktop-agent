@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChronoMAD Agent - Erreur de chargement</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      background-color: #f8fafc;
+      color: #334155;
+      text-align: center;
+    }
+    .container {
+      background: white;
+      padding: 40px;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      max-width: 500px;
+    }
+    h1 {
+      color: #ef4444;
+      margin-top: 0;
+    }
+    p {
+      line-height: 1.5;
+    }
+    .status {
+      margin-top: 20px;
+      padding: 10px;
+      background-color: #f1f5f9;
+      border-radius: 4px;
+      font-size: 0.9em;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Interface Introuvable</h1>
+    <p>L'agent ChronoMAD n'a pas pu charger l'interface utilisateur.</p>
+    <p>Si vous êtes en développement, assurez-vous que le serveur de développement frontend est lancé ou que le build frontend a été généré.</p>
+    <p>Si vous êtes en production, l'installation est peut-être corrompue.</p>
+    <div class="status">
+      Le processus d'arrière-plan (tracking) continue de fonctionner si une session était active.
+    </div>
+  </div>
+</body>
+</html>
