@@ -10,7 +10,7 @@ describe("trackingFilter", () => {
 
     test("ignore les apps dans IGNORED_APPS", () => {
       expect(shouldIgnoreActivity({ app_name: "Electron", window_title: "foo" })).toBe(true);
-      expect(shouldIgnoreActivity({ app_name: "CHRONOMAD", window_title: "bar" })).toBe(true);
+      expect(shouldIgnoreActivity({ app_name: "MADSUITE", window_title: "bar" })).toBe(true);
       expect(shouldIgnoreActivity({ app_name: "applicationframehost", window_title: "baz" })).toBe(true);
       expect(shouldIgnoreActivity({ app_name: "PowerToys.QuickAccess", window_title: "qux" })).toBe(true);
     });
@@ -58,7 +58,7 @@ describe("trackingFilter", () => {
 
     test("case insensitive pour les apps", () => {
       expect(shouldIgnoreActivity({ app_name: "electron", window_title: "foo" })).toBe(true);
-      expect(shouldIgnoreActivity({ app_name: "CHRONOMAD", window_title: "bar" })).toBe(true);
+      expect(shouldIgnoreActivity({ app_name: "MADSUITE", window_title: "bar" })).toBe(true);
     });
 
     test("case insensitive pour les titres ignores", () => {

@@ -1,7 +1,5 @@
-const childProcess = require("child_process");
-
 jest.mock("child_process", () => ({
-  exec: jest.fn(),
+  execFile: jest.fn(),
 }));
 
 describe("windowScanner", () => {
@@ -38,7 +36,7 @@ describe("windowScanner", () => {
 
   function loadWindowScannerWithExecMock(execMock) {
     jest.doMock("child_process", () => ({
-      exec: execMock,
+      execFile: execMock,
     }));
 
     let mod;
@@ -54,7 +52,6 @@ describe("windowScanner", () => {
     setPlatform("darwin");
 
     const execMock = jest.fn();
-
     const { getOpenWindows } = loadWindowScannerWithExecMock(execMock);
 
     const result = await getOpenWindows();
@@ -69,7 +66,7 @@ describe("windowScanner", () => {
   test("retourne [] si PowerShell retourne une erreur", async () => {
     setPlatform("win32");
 
-    const execMock = jest.fn((command, options, callback) => {
+    const execMock = jest.fn((file, args, options, callback) => {
       callback(new Error("PowerShell failed"), "", "");
     });
 
@@ -84,7 +81,7 @@ describe("windowScanner", () => {
   test("retourne [] si stdout est vide", async () => {
     setPlatform("win32");
 
-    const execMock = jest.fn((command, options, callback) => {
+    const execMock = jest.fn((file, args, options, callback) => {
       callback(null, "", "");
     });
 
@@ -101,7 +98,7 @@ describe("windowScanner", () => {
     const windows = [
       {
         ProcessName: "Code",
-        MainWindowTitle: "ChronoMAD",
+        MainWindowTitle: "MADSuite",
       },
       {
         ProcessName: "Chrome",
@@ -109,7 +106,7 @@ describe("windowScanner", () => {
       },
     ];
 
-    const execMock = jest.fn((command, options, callback) => {
+    const execMock = jest.fn((file, args, options, callback) => {
       callback(null, JSON.stringify(windows), "");
     });
 
@@ -125,10 +122,10 @@ describe("windowScanner", () => {
 
     const oneWindow = {
       ProcessName: "Code",
-      MainWindowTitle: "ChronoMAD",
+      MainWindowTitle: "MADSuite",
     };
 
-    const execMock = jest.fn((command, options, callback) => {
+    const execMock = jest.fn((file, args, options, callback) => {
       callback(null, JSON.stringify(oneWindow), "");
     });
 
@@ -142,7 +139,7 @@ describe("windowScanner", () => {
   test("retourne [] si le JSON est invalide", async () => {
     setPlatform("win32");
 
-    const execMock = jest.fn((command, options, callback) => {
+    const execMock = jest.fn((file, args, options, callback) => {
       callback(null, "{invalid-json", "");
     });
 

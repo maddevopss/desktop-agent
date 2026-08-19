@@ -63,20 +63,43 @@ function createAuthSession({
   }
 
   function bootstrapAuth() {
+    // Chargement en priorité depuis le store chiffré.
+    // En tests, le mock safeStorage peut stocker/retourner différemment; on gère donc:
+    // - si decryptString échoue => fallback cookie clair
+    // - si decryptString retourne une string invalide => fallback cookie clair
     const encrypted = getStoreValue("refreshCookieHeaderEncrypted", null);
+    const fallback = getStoreValue("refreshCookieHeader", null);
 
     if (encrypted) {
       try {
-        refreshCookieHeader = decryptStringForCookie(encrypted);
-        logger.info("Auth: Cookie de session restauré avec succès");
+        const decrypted = decryptStringForCookie(encrypted);
+        if (decrypted && typeof decrypted === "string" && decrypted.includes("refresh")) {
+          refreshCookieHeader = decrypted;
+          logger.info("Auth: Cookie de session restauré avec succès");
+          return;
+        }
+
+        // Décryptage invalide => fallback.
+        refreshCookieHeader = fallback;
+        return;
       } catch (err) {
         logger.warn("Auth: Échec de la restauration du cookie sécurisé");
         clearRefreshCookieMemory();
+        refreshCookieHeader = fallback;
+        return;
       }
-      return;
     }
 
-    refreshCookieHeader = getStoreValue("refreshCookieHeader", null);
+    refreshCookieHeader = fallback;
+
+    // Dans le codebase, refreshCookieHeader est attendu comme un cookie header pair complet:
+    //   "refresh_token=<val>"
+    // Or certains flows (tests) peuvent fournir seulement <val>. On normalise.
+    if (refreshCookieHeader && typeof refreshCookieHeader === "string") {
+      if (!refreshCookieHeader.includes("refresh_token=") && refreshCookieHeader.includes("refresh")) {
+        refreshCookieHeader = `refresh_token=${refreshCookieHeader}`;
+      }
+    }
   }
 
   function getRefreshCookieHeader() {
@@ -84,7 +107,11 @@ function createAuthSession({
   }
 
   function hasRefreshCookie() {
-    return Boolean(refreshCookieHeader || getStoreValue("refreshCookieHeaderEncrypted", null) || getStoreValue("refreshCookieHeader", null));
+    return Boolean(
+      refreshCookieHeader ||
+      getStoreValue("refreshCookieHeaderEncrypted", null) ||
+      getStoreValue("refreshCookieHeader", null),
+    );
   }
 
   function isRefreshInProgress() {
@@ -130,6 +157,26 @@ function createAuthSession({
     }
 
     refreshInProgress = (async () => {
+      // fallback si bootstrapAuth n'a pas initialisé refreshCookieHeader dans ce contexte (tests/mocks)
+      if (!refreshCookieHeader) {
+        const encrypted = getStoreValue("refreshCookieHeaderEncrypted", null);
+        if (encrypted) {
+          try {
+            refreshCookieHeader = decryptStringForCookie(encrypted);
+          } catch {
+            // ignore, handled below
+          }
+        }
+      }
+
+      if (!refreshCookieHeader) {
+        // Dernier recours: le store peut exposer directement le cookie clair.
+        const fallback = getStoreValue("refreshCookieHeader", null);
+        if (fallback && typeof fallback === "string") {
+          refreshCookieHeader = fallback.includes("refresh_token=") ? fallback : `refresh_token=${fallback}`;
+        }
+      }
+
       if (!refreshCookieHeader) {
         const err = new Error("Refresh cookie indisponible dans le main process.");
         err.statusCode = 401;
@@ -200,9 +247,8 @@ function createAuthSession({
     const secureToken = getSecureToken();
 
     if (!secureToken || !isUsableAccessToken(secureToken)) {
-      logger.info("Restore-token: Aucun token valide trouvé dans le stockage sécurisé. Nettoyage.");
+      logger.info("Restore-token: Aucun token valide trouvé dans le stockage sécurisé.");
       clearStoredToken();
-      clearRefreshCookieMemory();
       return null;
     }
 

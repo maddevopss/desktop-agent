@@ -1,65 +1,66 @@
-const axios = require("axios");
 const logger = require("../utils/logger");
-const { shouldIgnoreActivity, getActivitySignature } = require("../utils/trackingFilter");
+const {
+  shouldIgnoreActivity,
+  getActivitySignature,
+} = require("../utils/trackingFilter");
 
-const AXIOS_TIMEOUT = 5000;
-const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 1000;
+const {
+  addActivityPostFromPayload,
+  addWindowLogsPost,
+  addActivityDurationPatch,
+} = require("./trackingQueue");
 
-// /windows envoye uniquement quand la liste des fenetres change OU toutes les N ticks
-const WINDOWS_THROTTLE_TICKS = 3; // 3 ticks * interval = 90s si 30s, 180s si 60s
+// Le tracking passe par trackingQueue pour batcher /api/activity/batch.
+
+// /windows envoyé uniquement quand la liste des fenêtres change
+// OU toutes les N itérations.
+const WINDOWS_THROTTLE_TICKS = 3;
 
 // P0.3 — minimisation idle
-const IDLE_OPEN_WINDOWS_THRESHOLD_SEC = Number(process.env.AGENT_IDLE_OPEN_WINDOWS_THRESHOLD_SEC || 60);
-const IDLE_OPEN_WINDOWS_SKIP_SEC = Number(process.env.AGENT_IDLE_OPEN_WINDOWS_SKIP_SEC || 180);
+const IDLE_OPEN_WINDOWS_THRESHOLD_SEC = Number(
+  process.env.AGENT_IDLE_OPEN_WINDOWS_THRESHOLD_SEC || 60,
+);
 
-async function fetchWithRetry(url, options, retries = MAX_RETRIES) {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const response = await axios({
-        url,
-        timeout: AXIOS_TIMEOUT,
-        ...options,
-      });
-      return response;
-    } catch (err) {
-      if (attempt === retries) throw err;
-
-      const isRetryable = err.code === "ECONNABORTED" || err.code === "ETIMEDOUT" || err.response?.status >= 500;
-
-      if (!isRetryable) throw err;
-
-      logger.warn("REQUEST RETRY", { attempt, maxRetries: MAX_RETRIES, url, message: err.message });
-      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * attempt));
-    }
-  }
-}
+const IDLE_OPEN_WINDOWS_SKIP_SEC = Number(
+  process.env.AGENT_IDLE_OPEN_WINDOWS_SKIP_SEC || 180,
+);
 
 function sanitizeWindowTitle(rawTitle) {
-  const t = String(rawTitle ?? "").trim();
-  if (!t) return "";
+  const title = String(rawTitle ?? "").trim();
 
-  // Redaction stricte : on évite de stocker/propager des secrets via titles
+  if (!title) {
+    return "";
+  }
+
+  // Redaction stricte :
+  // ne jamais stocker ou propager de secrets via les titres.
   const patterns = [
     /\bbearer\b\s+[^\s]+/i,
     /\bauthorization\b\s*[:=]\s*[^\s]+/i,
     /\baccess[_-]?token\b\s*[:=]\s*[^\s]+/i,
     /\btoken\b\s*[:=]\s*[^\s]+/i,
-    /\beyJ[A-Za-z0-9\-_]+/i, // JWT-like start (eyJ...)
-    /[A-Za-z0-9\-_]{20,}\.[A-Za-z0-9\-_]{20,}/, // base64-ish segments
+    /\beyJ[A-Za-z0-9\-_]+/i,
+    /[A-Za-z0-9\-_]{20,}\.[A-Za-z0-9\-_]{20,}/,
     /\bnas\b/i,
   ];
 
-  if (patterns.some((re) => re.test(t))) return "[redacted]";
-  // Protection contre abus / payloads énormes
-  return t.length > 300 ? t.slice(0, 300) + "…" : t;
+  if (patterns.some((pattern) => pattern.test(title))) {
+    return "[redacted]";
+  }
+
+  // Protection contre les payloads anormalement volumineux.
+  return title.length > 300
+    ? `${title.slice(0, 300)}…`
+    : title;
 }
 
 function sanitizeAppName(rawAppName) {
-  const n = String(rawAppName ?? "").trim();
-  if (!n) return "";
+  const appName = String(rawAppName ?? "").trim();
 
-  // Même politique que pour window_title : jamais de tokens/bearer/cochonneries
+  if (!appName) {
+    return "";
+  }
+
   const patterns = [
     /\bbearer\b/i,
     /\bauthorization\b/i,
@@ -69,23 +70,35 @@ function sanitizeAppName(rawAppName) {
     /\bnas\b/i,
   ];
 
-  if (patterns.some((re) => re.test(n))) return "[redacted]";
-  return n.length > 200 ? n.slice(0, 200) + "…" : n;
+  if (patterns.some((pattern) => pattern.test(appName))) {
+    return "[redacted]";
+  }
+
+  return appName.length > 200
+    ? `${appName.slice(0, 200)}…`
+    : appName;
 }
 
 function serializeWindows(windows) {
   return JSON.stringify(
     (windows || [])
-      .map((w) => ({
-        name: sanitizeAppName(w.ProcessName || w.ProcessName || w.name || ""),
-        title: sanitizeWindowTitle(w.MainWindowTitle || w.title || ""),
+      .map((window) => ({
+        name: sanitizeAppName(
+          window.ProcessName ||
+            window.name ||
+            "",
+        ),
+        title: sanitizeWindowTitle(
+          window.MainWindowTitle ||
+            window.title ||
+            "",
+        ),
       }))
       .sort((a, b) => a.name.localeCompare(b.name)),
   );
 }
 
 function createTrackingController({
-  apiUrl,
   getToken,
   getTrackingInterval,
   getIdleSeconds,
@@ -95,24 +108,21 @@ function createTrackingController({
   getPrivacySettings = () => ({}),
   onActivityCaptured,
   onAuthExpired,
-  onCaptureQueueFailed,
 }) {
   let lastActivityId = null;
   let lastActivitySignature = null;
   let trackingInterval = null;
   let didAuthExpired = false;
 
-  // Deduplication /windows
+  // Déduplication /windows
   let lastWindowsSignature = null;
   let windowsTickCounter = 0;
 
-  function getAuthHeaders() {
-    const tok = getToken();
-    return tok ? { Cookie: `access_token=${tok}` } : {};
-  }
-
   function expireAuthOnce() {
-    if (didAuthExpired) return;
+    if (didAuthExpired) {
+      return;
+    }
+
     didAuthExpired = true;
     stopTracking();
     onAuthExpired?.();
@@ -122,25 +132,43 @@ function createTrackingController({
     const token = getToken();
     const activeWin = getActiveWindow();
 
-    if (!activeWin || !token) return;
+    // P0.3 — aucune capture lorsque l'utilisateur est idle.
+    if (isUserIdle()) {
+      return;
+    }
+
+    if (!activeWin || !token) {
+      return;
+    }
 
     const activeWindow = await activeWin();
+
+    if (!activeWindow) {
+      return;
+    }
+
     const idleSeconds = getIdleSeconds();
 
-    if (!activeWindow) return;
-
     const payload = {
-      app_name: sanitizeAppName(activeWindow.owner?.name || "Unknown"),
-      window_title: sanitizeWindowTitle(activeWindow.title || ""),
+      app_name: sanitizeAppName(
+        activeWindow.owner?.name || "Unknown",
+      ),
+      window_title: sanitizeWindowTitle(
+        activeWindow.title || "",
+      ),
       duration_seconds: intervalSeconds,
       is_idle: isUserIdle(),
       idle_seconds: idleSeconds,
     };
 
     if (shouldIgnoreActivity(payload, getPrivacySettings())) {
-      logger.info("TRACKING IGNORED", { appName: payload.app_name });
+      logger.info("TRACKING IGNORED", {
+        appName: payload.app_name,
+      });
+
       lastActivitySignature = null;
       lastActivityId = null;
+
       return;
     }
 
@@ -151,123 +179,137 @@ function createTrackingController({
     });
 
     const signature = getActivitySignature(payload);
+
     payload.activity_signature = signature;
 
-    if (signature === lastActivitySignature && lastActivityId) {
-      try {
-        await fetchWithRetry(`${apiUrl}/api/activity/${lastActivityId}/duration`, {
-          method: "PATCH",
-          headers: getAuthHeaders(),
-          data: {
-            duration_seconds: intervalSeconds,
-            is_idle: payload.is_idle,
-            idle_seconds: idleSeconds,
-          },
-        });
-      } catch (err) {
-        const status = err?.response?.status;
-        if (status === 401) throw err;
-        onCaptureQueueFailed?.({
-          kind: "activity_duration_patch",
-          payload: {
-            activity_id: lastActivityId,
-            duration_seconds: intervalSeconds,
-            is_idle: payload.is_idle,
-            idle_seconds: idleSeconds,
-          },
-        });
-        throw err;
-      }
+    /*
+     * Si un ID d'activité est disponible, une activité identique
+     * peut être convertie en mise à jour de durée.
+     */
+    if (
+      signature === lastActivitySignature &&
+      lastActivityId
+    ) {
+      addActivityDurationPatch({
+        activityId: lastActivityId,
+        duration_seconds: intervalSeconds,
+        is_idle: payload.is_idle,
+        idle_seconds: idleSeconds,
+      });
 
-      logger.info("ACTIVITY DURATION UPDATED");
+      logger.info("ACTIVITY DURATION QUEUED");
+
       return;
     }
 
-    let activityRes;
-    try {
-      activityRes = await fetchWithRetry(`${apiUrl}/api/activity`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        data: payload,
-      });
-    } catch (err) {
-      const status = err?.response?.status;
-      if (status === 401) throw err;
+    /*
+     * Nouvelle activité.
+     *
+     * L'écriture réseau est déléguée à trackingQueue.
+     */
+    addActivityPostFromPayload(payload);
 
-      onCaptureQueueFailed?.({
-        kind: "activity_post",
-        payload,
-      });
-      throw err;
-    }
-
+    /*
+     * L'ID réel n'est pas connu avant le flush du batch.
+     * On évite donc d'envoyer un PATCH avant que l'insertion
+     * correspondante existe.
+     */
     lastActivitySignature = signature;
-    lastActivityId = activityRes.data?.id || null;
+    lastActivityId = null;
 
-    logger.info("ACTIVITY LOG SAVED");
+    logger.info("ACTIVITY LOG QUEUED");
   }
 
   async function saveOpenWindowsTick(intervalSeconds) {
-    const tok = getToken();
-    if (!tok) return;
+    const token = getToken();
 
-    // P0.3 — minimisation idle: réduction/skip des open-windows
+    if (!token) {
+      return;
+    }
+
+    /*
+     * P0.3 — minimisation lorsque l'utilisateur est idle.
+     */
     if (isUserIdle()) {
       const idleSeconds = getIdleSeconds();
-      if (idleSeconds >= IDLE_OPEN_WINDOWS_SKIP_SEC) {
-        logger.info("WINDOW LOGS SKIPPED", { reason: "idle_skip", idleSeconds });
-        return;
-      }
 
-      if (idleSeconds >= IDLE_OPEN_WINDOWS_THRESHOLD_SEC) {
-        // En idle, on augmente la sensibilité au throttle en réduisant l’envoi aux changements uniquement
-        // (hasChanged seul)
+      if (idleSeconds >= IDLE_OPEN_WINDOWS_SKIP_SEC) {
+        logger.info("WINDOW LOGS SKIPPED", {
+          reason: "idle_skip",
+          idleSeconds,
+        });
+
+        return;
       }
     }
 
     const privacySettings = getPrivacySettings();
-    const openWindows = ((await getOpenWindows()) || []).filter(
-      (win) =>
+
+    const openWindows = (
+      (await getOpenWindows()) || []
+    ).filter(
+      (window) =>
         !shouldIgnoreActivity(
           {
-            app_name: win.ProcessName || win.name || "",
-            window_title: win.MainWindowTitle || win.title || "",
+            app_name:
+              window.ProcessName ||
+              window.name ||
+              "",
+            window_title:
+              window.MainWindowTitle ||
+              window.title ||
+              "",
           },
           privacySettings,
         ),
     );
 
-    if (!openWindows || openWindows.length === 0) return;
-
-    windowsTickCounter++;
-    const signature = serializeWindows(openWindows);
-
-    // Throttle: on n'envoie que si changed ou toutes les N ticks
-    const hasChanged = signature !== lastWindowsSignature;
-
-    // En idle: on favorise hasChanged seulement (réduit le spam quand l'utilisateur ne bouge pas)
-    let effectiveWindowsThrottleTicks = WINDOWS_THROTTLE_TICKS;
-    if (isUserIdle()) {
-      const idleSeconds = getIdleSeconds();
-      if (idleSeconds >= IDLE_OPEN_WINDOWS_THRESHOLD_SEC) {
-        effectiveWindowsThrottleTicks = 999_999; // effectively never-send-by-time while idle
-      }
-    }
-
-    const shouldSend = hasChanged || windowsTickCounter >= effectiveWindowsThrottleTicks;
-
-    if (!shouldSend) {
-      logger.info("WINDOW LOGS SKIPPED", { reason: "unchanged_throttled" });
+    if (openWindows.length === 0) {
       return;
     }
 
-    // Reset counter on change, decrement otherwise (avoids sending every Nth tick forever)
-    if (hasChanged) {
-      windowsTickCounter = 0;
-    } else {
-      windowsTickCounter = 0; // reset apres envoi throttle
+    windowsTickCounter += 1;
+
+    const signature = serializeWindows(openWindows);
+    const hasChanged =
+      signature !== lastWindowsSignature;
+
+    /*
+     * Hors idle :
+     *   - envoyer lors d'un changement
+     *   - ou périodiquement.
+     *
+     * En idle prolongé :
+     *   - envoyer uniquement lorsqu'une fenêtre change.
+     */
+    let effectiveWindowsThrottleTicks =
+      WINDOWS_THROTTLE_TICKS;
+
+    if (isUserIdle()) {
+      const idleSeconds = getIdleSeconds();
+
+      if (
+        idleSeconds >=
+        IDLE_OPEN_WINDOWS_THRESHOLD_SEC
+      ) {
+        effectiveWindowsThrottleTicks = 999_999;
+      }
     }
 
+    const shouldSend =
+      hasChanged ||
+      windowsTickCounter >=
+        effectiveWindowsThrottleTicks;
+
+    if (!shouldSend) {
+      logger.info("WINDOW LOGS SKIPPED", {
+        reason: "unchanged_throttled",
+      });
+
+      return;
+    }
+
+    windowsTickCounter = 0;
     lastWindowsSignature = signature;
 
     const windowsPayload = {
@@ -277,70 +319,95 @@ function createTrackingController({
       idle_seconds: getIdleSeconds(),
     };
 
-    try {
-      await fetchWithRetry(`${apiUrl}/api/activity/windows`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        data: windowsPayload,
-      });
-    } catch (err) {
-      const status = err?.response?.status;
-      if (status === 401) throw err;
+    addWindowLogsPost(windowsPayload);
 
-      onCaptureQueueFailed?.({
-        kind: "activity_windows_post",
-        payload: windowsPayload,
-      });
-
-      throw err;
-    }
-
-    logger.info("WINDOW LOGS SAVED", { reason: hasChanged ? "changed" : "throttled_tick" });
+    logger.info("WINDOW LOGS QUEUED", {
+      reason: hasChanged
+        ? "changed"
+        : "throttled_tick",
+    });
   }
 
   function startTracking() {
-    if (trackingInterval) return;
-    if (!getToken()) {
-      logger.info("TRACKING NOT STARTED", { reason: "missing_token" });
+    if (trackingInterval) {
       return;
     }
 
-    const intervalSeconds = getTrackingInterval();
-    const intervalMs = intervalSeconds * 1000;
+    if (!getToken()) {
+      logger.info("TRACKING NOT STARTED", {
+        reason: "missing_token",
+      });
 
-    logger.info("TRACKING STARTED", { intervalSeconds });
+      return;
+    }
+
+    const intervalSeconds =
+      getTrackingInterval();
+
+    const intervalMs =
+      intervalSeconds * 1000;
+
+    logger.info("TRACKING STARTED", {
+      intervalSeconds,
+    });
+
     didAuthExpired = false;
 
     let tickInProgress = false;
 
-    trackingInterval = setInterval(async () => {
-      if (tickInProgress) {
-        logger.info("TRACKING TICK SKIPPED", { reason: "inflight" });
-        return;
-      }
+    trackingInterval = setInterval(
+      async () => {
+        if (tickInProgress) {
+          logger.info(
+            "TRACKING TICK SKIPPED",
+            {
+              reason: "inflight",
+            },
+          );
 
-      tickInProgress = true;
-      try {
-        if (!getToken()) {
-          stopTracking();
           return;
         }
 
-        await Promise.all([
-          saveActiveWindowTick(intervalSeconds),
-          saveOpenWindowsTick(intervalSeconds)
-        ]);
-      } catch (err) {
-        const status = err?.response?.status;
-        logger.error("TRACKING ERROR", { status, detail: err?.response?.data || err.message });
+        tickInProgress = true;
 
-        if (status === 401) {
-          expireAuthOnce();
+        try {
+          if (!getToken()) {
+            stopTracking();
+            return;
+          }
+
+          await saveActiveWindowTick(
+            intervalSeconds,
+          );
+
+          if (!getToken()) {
+            stopTracking();
+            return;
+          }
+
+          await saveOpenWindowsTick(
+            intervalSeconds,
+          );
+        } catch (err) {
+          const status =
+            err?.response?.status;
+
+          logger.error("TRACKING ERROR", {
+            status,
+            detail:
+              err?.response?.data ||
+              err.message,
+          });
+
+          if (status === 401) {
+            expireAuthOnce();
+          }
+        } finally {
+          tickInProgress = false;
         }
-      } finally {
-        tickInProgress = false;
-      }
-    }, intervalMs);
+      },
+      intervalMs,
+    );
   }
 
   function stopTracking() {
@@ -356,7 +423,9 @@ function createTrackingController({
   }
 
   return {
-    isTracking: () => Boolean(trackingInterval),
+    isTracking: () =>
+      Boolean(trackingInterval),
+
     saveActiveWindowTick,
     saveOpenWindowsTick,
     startTracking,

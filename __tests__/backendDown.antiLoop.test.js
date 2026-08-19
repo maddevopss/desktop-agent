@@ -14,6 +14,7 @@ describe("desktop-agent anti-loop when backend is down", () => {
 
     jest.doMock("electron", () => ({
       app: {
+        getVersion: jest.fn(() => "1.0.0"),
         isPackaged: false,
         getPath: jest.fn(() => "./tmp"),
         getAppPath: jest.fn(() => "./tmp"),
@@ -70,6 +71,7 @@ describe("desktop-agent anti-loop when backend is down", () => {
 
     jest.doMock("electron", () => ({
       app: {
+        getVersion: jest.fn(() => "1.0.0"),
         isPackaged: false,
         getPath: jest.fn(() => "./tmp"),
         getAppPath: jest.fn(() => "./tmp"),

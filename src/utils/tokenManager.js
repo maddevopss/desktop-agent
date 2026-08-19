@@ -1,8 +1,24 @@
+const isTestRuntime = process.env.NODE_ENV === "test" || Boolean(process.env.JEST_WORKER_ID);
+
 let Store;
+let encKey = null;
 
 try {
+  const crypto = require("crypto");
+
+  if (!process.env.AGENT_TOKEN_ENC_KEY) {
+    throw new Error("AGENT_TOKEN_ENC_KEY environment variable is required for token encryption.");
+  }
+
+  encKey = crypto.createHash("sha256").update(process.env.AGENT_TOKEN_ENC_KEY).digest("base64").slice(0, 32);
   Store = require("electron-store");
-} catch {
+} catch (error) {
+  if (!isTestRuntime) {
+    throw error;
+  }
+
+  // Repli strictement réservé aux tests isolés où electron-store ou la clé
+  // de chiffrement peuvent être volontairement absents.
   Store = class MemoryStore {
     constructor() {
       this.data = new Map();
@@ -20,65 +36,61 @@ try {
       this.data.delete(key);
     }
   };
+
+  encKey = "__test_enc_key_missing__";
 }
+
+const jwt = require("jsonwebtoken");
 
 let store = null;
+let initPromise = null;
 
 async function initStore() {
-  if (!store) {
+  if (store) return store;
+  if (initPromise) return initPromise;
+
+  initPromise = (async () => {
     store = new Store({
-      name: "chronomad-agent",
+      name: "madsuite-agent",
+      encryptionKey: encKey,
     });
-  }
+    return store;
+  })();
 
-  return store;
-}
-
-let safeStorage = null;
-try {
-  const electron = require("electron");
-  if (electron.app) {
-    safeStorage = electron.safeStorage;
-  }
-} catch (e) {
-  // Non-electron environment
+  return initPromise;
 }
 
 function getSecureToken() {
   if (!store) return null;
-  const val = store.get("token", null);
-  if (!val) return null;
-  
-  if (safeStorage && safeStorage.isEncryptionAvailable()) {
-    try {
-      // Try to decrypt
-      const buffer = Buffer.from(val, "base64");
-      return safeStorage.decryptString(buffer);
-    } catch (e) {
-      // Fallback if it wasn't encrypted or key is wrong
-      return val;
+  const token = store.get("token", null);
+  if (!token) return null;
+
+  try {
+    if (process.env.AGENT_TOKEN_SIGN_KEY) {
+      const payload = jwt.verify(token, process.env.AGENT_TOKEN_SIGN_KEY);
+      if (payload.exp && Date.now() >= payload.exp * 1000) {
+        clearSecureToken();
+        return null;
+      }
+      return token;
     }
+
+    const payload = jwt.decode(token);
+    if (payload && payload.exp && Date.now() >= payload.exp * 1000) {
+      clearSecureToken();
+      return null;
+    }
+  } catch {
+    clearSecureToken();
+    return null;
   }
-  return val;
+
+  return token;
 }
 
 function setSecureToken(token) {
   if (!store) return;
-  if (!token) {
-    store.set("token", null);
-    return;
-  }
-  
-  if (safeStorage && safeStorage.isEncryptionAvailable()) {
-    try {
-      const encrypted = safeStorage.encryptString(token).toString("base64");
-      store.set("token", encrypted);
-    } catch (e) {
-      throw new Error("Erreur de chiffrement du jeton.");
-    }
-  } else {
-    throw new Error("Chiffrement matériel indisponible. Sécurité compromise.");
-  }
+  store.set("token", token || null);
 }
 
 function clearSecureToken() {

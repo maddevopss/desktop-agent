@@ -3,25 +3,6 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
-// Les idees capturees via le Spotlight global sont irremplacables : contrairement a une
-// capture d'activite (re-echantillonnee en continu), une idee perdue l'est definitivement.
-// Ce kind est donc protege de l'eviction FIFO quand la file sature.
-const CAPTURE_KIND_BRAIN_DUMP = "brain_dump_capture";
-
-/**
- * Retire de la file le plus ancien element evincable, en epargnant les captures de
- * decharge mentale tant qu'il reste autre chose a sacrifier.
- * @param {Array<{ kind?: string }>} items - File modifiee en place.
- * @returns {boolean} True si un element a ete retire.
- */
-function dropOldestEvictable(items) {
-  const index = items.findIndex((it) => it?.kind !== CAPTURE_KIND_BRAIN_DUMP);
-
-  // Plus rien d'autre a jeter : on sacrifie la plus ancienne idee, faute de mieux.
-  items.splice(index === -1 ? 0 : index, 1);
-  return items.length > 0;
-}
-
 function createCaptureQueue({
   apiUrl,
   app,
@@ -29,6 +10,7 @@ function createCaptureQueue({
   isUsableAccessToken,
   logger,
   isQuitting = () => false,
+  onQueueStatsChanged = () => {},
 }) {
   const captureQueueMaxItems = Number(process.env.AGENT_CAPTURE_QUEUE_MAX_ITEMS || 200);
   const captureQueueMaxBytes = Number(process.env.AGENT_CAPTURE_QUEUE_MAX_BYTES || 2_000_000);
@@ -37,6 +19,8 @@ function createCaptureQueue({
 
   let captureQueue = null;
   let captureQueueFlushTimer = null;
+  let lastNudgeTime = 0;
+  const NUDGE_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes
 
   function getCaptureQueuePath() {
     const diagnosticsDir = path.join(app.getPath("userData"), "diagnostics");
@@ -57,8 +41,17 @@ function createCaptureQueue({
     let items = [];
     try {
       if (fs.existsSync(queuePath)) {
-        const raw = fs.readFileSync(queuePath, "utf8");
-        const parsed = JSON.parse(raw);
+        const raw = fs.readFileSync(queuePath);
+        let parsedStr = raw.toString("utf8");
+        const { safeStorage } = require("electron");
+        if (safeStorage && safeStorage.isEncryptionAvailable()) {
+          try {
+            parsedStr = safeStorage.decryptString(raw);
+          } catch (e) {
+            parsedStr = raw.toString("utf8");
+          }
+        }
+        const parsed = JSON.parse(parsedStr);
         items = Array.isArray(parsed?.items) ? parsed.items : [];
       }
     } catch (err) {
@@ -83,7 +76,21 @@ function createCaptureQueue({
   function persistCaptureQueue() {
     if (!captureQueue) return;
     ensureDirSync(path.dirname(captureQueue.path));
-    fs.writeFileSync(captureQueue.path, JSON.stringify({ items: captureQueue.items }, null, 2), "utf8");
+    const rawJson = JSON.stringify({ items: captureQueue.items }, null, 2);
+    let dataToWrite = rawJson;
+    const { safeStorage } = require("electron");
+    if (safeStorage && safeStorage.isEncryptionAvailable()) {
+      dataToWrite = safeStorage.encryptString(rawJson);
+    }
+    const tempPath = `${captureQueue.path}.tmp`;
+    fs.writeFileSync(tempPath, dataToWrite);
+    fs.renameSync(tempPath, captureQueue.path);
+    
+    try {
+      onQueueStatsChanged({ pendingCount: captureQueue.items.length });
+    } catch (e) {
+      logger.warn("CAPTURE QUEUE STATS CALLBACK FAILED", { error: e?.message });
+    }
   }
 
   function clearCaptureQueueFlushTimer() {
@@ -149,11 +156,11 @@ function createCaptureQueue({
 
       const newItems = q.items.concat([entry]);
 
-      while (newItems.length > captureQueueMaxItems) dropOldestEvictable(newItems);
+      while (newItems.length > captureQueueMaxItems) newItems.shift();
 
       let bytes = Buffer.byteLength(JSON.stringify(newItems));
       while (bytes > captureQueueMaxBytes && newItems.length > 1) {
-        dropOldestEvictable(newItems);
+        newItems.shift();
         bytes = Buffer.byteLength(JSON.stringify(newItems));
       }
 
@@ -179,61 +186,85 @@ function createCaptureQueue({
     const currentTok = getCurrentToken();
     if (!currentTok || !isUsableAccessToken(currentTok)) return { flushed: 0 };
 
-    const itemsToFlush = captureQueue.items.slice(0, 25);
+    const itemsToFlush = captureQueue.items.slice(0, 100);
     let flushed = 0;
-    const remaining = [];
 
-    for (const it of itemsToFlush) {
-      try {
-        if (!it?.payload) continue;
+    try {
+      const authConfig = {
+        timeout: 15000,
+        headers: { Cookie: `access_token=${currentTok}` },
+        validateStatus: () => true,
+      };
 
-        const authConfig = {
-          timeout: 10000,
-          headers: { Cookie: `access_token=${currentTok}` },
-          validateStatus: () => true,
-        };
+      const payload = { events: itemsToFlush };
+      const response = await axios.post(`${apiUrl}/api/activity/batch`, payload, authConfig);
 
-        let response = null;
-        if (it.kind === "activity_post") {
-          response = await axios.post(`${apiUrl}/api/activity`, it.payload, authConfig);
-        } else if (it.kind === "activity_windows_post") {
-          response = await axios.post(`${apiUrl}/api/activity/windows`, it.payload, authConfig);
-        } else if (it.kind === CAPTURE_KIND_BRAIN_DUMP) {
-          response = await axios.post(
-            `${apiUrl}/api/brain-dump-captures`,
-            {
-              raw_text: it.payload.raw_text,
-              source: it.payload.source || "spotlight",
-              // L'id de l'entree de file sert de cle d'idempotence : si un POST a reussi
-              // cote serveur mais que la reponse a expire, le rejeu renvoie 200 sans doublon.
-              client_capture_id: it.payload.client_capture_id || it.id,
-            },
-            authConfig,
-          );
-        } else if (it.kind === "activity_duration_patch") {
-          response = await axios.patch(
-            `${apiUrl}/api/activity/${it.payload.activity_id}/duration`,
-            {
-              duration_seconds: it.payload.duration_seconds,
-              is_idle: it.payload.is_idle,
-              idle_seconds: it.payload.idle_seconds,
-            },
-            authConfig,
-          );
-        }
-
-        if (!response || response.status < 200 || response.status >= 300) {
-          throw new Error(`Queue flush failed with status ${response?.status}`);
-        }
-
-        flushed += 1;
-      } catch {
-        remaining.push(it);
+      if (!response || response.status < 200 || response.status >= 300) {
+        throw new Error(`Queue flush batch failed with status ${response?.status}`);
       }
+
+      // --- TDAH NUDGES ---
+      let failedEvents = [];
+      if (response.data) {
+        failedEvents = response.data.failed || response.data.errors || [];
+
+        const { powerMonitor, Notification } = require("electron");
+        if (Notification && Notification.isSupported()) {
+          const now = Date.now();
+          if (now - lastNudgeTime > NUDGE_COOLDOWN_MS) {
+            
+            // 1. Timer Oublié
+            if (response.data.hasActiveTimer === false) {
+              const systemIdleTime = powerMonitor ? powerMonitor.getSystemIdleTime() : 0;
+              // Si l'utilisateur a bougé la souris récemment (pas inactif)
+              if (systemIdleTime < 60) {
+                const notif = new Notification({
+                  title: "🧠 ChronoMAD - Timer Oublié ?",
+                  body: "Tu as l'air concentré ! N'oublie pas de lancer ton timer si tu travailles.",
+                });
+                notif.show();
+                lastNudgeTime = now;
+              }
+            } 
+            // 2. Distraction Awareness Layer (Smart Focus Shield)
+            else if (response.data.hasActiveTimer === true) {
+              const distractions = ['youtube', 'facebook', 'instagram', 'tiktok', 'reddit', 'twitter', 'x.com', 'netflix'];
+              const isDistracted = itemsToFlush.some(it => {
+                if (it.kind === "activity_post" && it.payload) {
+                  const txt = (it.payload.window_title + " " + it.payload.app_name).toLowerCase();
+                  return distractions.some(d => txt.includes(d));
+                }
+                return false;
+              });
+
+              if (isDistracted) {
+                const notif = new Notification({
+                  title: "🛡️ Smart Focus Shield",
+                  body: "Distraction détectée. Pause assumée ou retour au focus ?",
+                });
+                notif.show();
+                lastNudgeTime = now;
+              }
+            }
+          }
+        }
+      }
+
+      if (failedEvents.length === 0) {
+        flushed = itemsToFlush.length;
+        captureQueue.items = captureQueue.items.slice(itemsToFlush.length);
+      } else {
+        logger.warn("BATCH FLUSH PARTIAL FAILURE - re-queuing failed events", {
+          failedCount: failedEvents.length,
+          failed: failedEvents,
+        });
+        // do not slice/remove - keep failed items for retry
+      }
+    } catch (err) {
+      logger.warn("BATCH FLUSH FAILED", { error: err?.message });
+      // Keep items in queue on failure
     }
 
-    const notAttempted = captureQueue.items.slice(itemsToFlush.length);
-    captureQueue.items = remaining.concat(notAttempted);
     captureQueue.bytes = Buffer.byteLength(JSON.stringify(captureQueue.items));
 
     persistCaptureQueue();
@@ -271,4 +302,4 @@ function createCaptureQueue({
   };
 }
 
-module.exports = { createCaptureQueue, CAPTURE_KIND_BRAIN_DUMP };
+module.exports = { createCaptureQueue };

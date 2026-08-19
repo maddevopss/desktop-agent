@@ -8,7 +8,7 @@ function normalizeString(str) {
 
 const IGNORED_APPS = [
   "Electron",
-  "ChronoMAD",
+  "MADSuite",
   "ApplicationFrameHost",
   "SystemSettings",
   "TextInputHost",
