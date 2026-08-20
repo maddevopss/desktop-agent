@@ -28,6 +28,7 @@ function createCaptureQueue({
   logger,
   isQuitting = () => false,
   onQueueStatsChanged = () => {},
+  onAuthExpired = () => {},
 }) {
   const captureQueueMaxItems = Number(process.env.AGENT_CAPTURE_QUEUE_MAX_ITEMS || 200);
   const captureQueueMaxBytes = Number(process.env.AGENT_CAPTURE_QUEUE_MAX_BYTES || 2_000_000);
@@ -37,7 +38,24 @@ function createCaptureQueue({
   let captureQueue = null;
   let captureQueueFlushTimer = null;
   let lastNudgeTime = 0;
+  let authExpirationHandled = false;
   const NUDGE_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes
+
+  function createResponseError(message, response) {
+    const error = new Error(message);
+    error.response = {
+      status: response?.status,
+      data: response?.data,
+    };
+    return error;
+  }
+
+  function handleAuthExpired(error) {
+    if (authExpirationHandled || error?.response?.status !== 401) return;
+
+    authExpirationHandled = true;
+    onAuthExpired();
+  }
 
   function getCaptureQueuePath() {
     const diagnosticsDir = path.join(app.getPath("userData"), "diagnostics");
@@ -236,11 +254,15 @@ function createCaptureQueue({
         );
 
         if (!response || response.status < 200 || response.status >= 300) {
-          throw new Error(`Brain dump flush failed with status ${response?.status}`);
+          throw createResponseError(
+            `Brain dump flush failed with status ${response?.status}`,
+            response,
+          );
         }
 
         flushedIds.add(item.id);
       } catch (err) {
+        handleAuthExpired(err);
         // L'idee reste en file : elle sera rejouee au prochain flush.
         logger.warn("BRAIN DUMP FLUSH FAILED", { error: err?.message });
       }
@@ -252,7 +274,10 @@ function createCaptureQueue({
       const response = await axios.post(`${apiUrl}/api/activity/batch`, payload, authConfig);
 
       if (!response || response.status < 200 || response.status >= 300) {
-        throw new Error(`Queue flush batch failed with status ${response?.status}`);
+        throw createResponseError(
+          `Queue flush batch failed with status ${response?.status}`,
+          response,
+        );
       }
 
       // --- TDAH NUDGES ---
@@ -312,6 +337,7 @@ function createCaptureQueue({
         // do not remove - keep failed items for retry
       }
       } catch (err) {
+        handleAuthExpired(err);
         logger.warn("BATCH FLUSH FAILED", { error: err?.message });
         // Keep items in queue on failure
       }

@@ -1,15 +1,11 @@
-jest.mock("axios", () => jest.fn());
-
-const axios = require("axios");
 const { createTrackingController } = require("../src/main/tracking");
 
-describe("tracking auth expiration", () => {
+describe("tracking queue integration", () => {
   let consoleError;
   let consoleLog;
 
   beforeEach(() => {
     jest.useFakeTimers();
-    axios.mockReset();
     consoleError = jest.spyOn(console, "error").mockImplementation(() => {});
     consoleLog = jest.spyOn(console, "log").mockImplementation(() => {});
   });
@@ -20,12 +16,10 @@ describe("tracking auth expiration", () => {
     consoleLog.mockRestore();
   });
 
-  test("stops tracking and notifies auth expiration once after a 401", async () => {
-    const onAuthExpired = jest.fn();
-    axios.mockRejectedValue({ response: { status: 401, data: { message: "expired" } } });
+  test("envoie l'activite a la file persistante", async () => {
+    const onCaptureQueueFailed = jest.fn(() => true);
 
     const tracking = createTrackingController({
-      apiUrl: "http://localhost:5000",
       getToken: () => "expired-token",
       getTrackingInterval: () => 10,
       getIdleSeconds: () => 0,
@@ -35,7 +29,7 @@ describe("tracking auth expiration", () => {
         title: "Timesheet",
       }),
       getOpenWindows: jest.fn(async () => []),
-      onAuthExpired,
+      onCaptureQueueFailed,
     });
 
     tracking.startTracking();
@@ -43,13 +37,16 @@ describe("tracking auth expiration", () => {
 
     await jest.advanceTimersByTimeAsync(10000);
 
-    expect(onAuthExpired).toHaveBeenCalledTimes(1);
-    expect(tracking.isTracking()).toBe(false);
-    expect(axios).toHaveBeenCalledTimes(1);
+    expect(onCaptureQueueFailed).toHaveBeenCalledWith({
+      kind: "activity_post",
+      payload: expect.objectContaining({
+        app_name: "Code",
+        window_title: "Timesheet",
+        duration_seconds: 10,
+      }),
+    });
+    expect(tracking.isTracking()).toBe(true);
 
-    await jest.advanceTimersByTimeAsync(30000);
-
-    expect(onAuthExpired).toHaveBeenCalledTimes(1);
-    expect(axios).toHaveBeenCalledTimes(1);
+    tracking.stopTracking();
   });
 });

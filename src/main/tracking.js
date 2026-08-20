@@ -4,13 +4,6 @@ const {
   getActivitySignature,
 } = require("../utils/trackingFilter");
 
-const {
-  addActivityPostFromPayload,
-  addWindowLogsPost,
-  addActivityDurationPatch,
-} = require("./trackingQueue");
-
-// Le tracking passe par trackingQueue pour batcher /api/activity/batch.
 
 // /windows envoyé uniquement quand la liste des fenêtres change
 // OU toutes les N itérations.
@@ -108,6 +101,7 @@ function createTrackingController({
   getPrivacySettings = () => ({}),
   onActivityCaptured,
   onAuthExpired,
+  onCaptureQueueFailed,
 }) {
   let lastActivityId = null;
   let lastActivitySignature = null;
@@ -190,11 +184,14 @@ function createTrackingController({
       signature === lastActivitySignature &&
       lastActivityId
     ) {
-      addActivityDurationPatch({
-        activityId: lastActivityId,
-        duration_seconds: intervalSeconds,
-        is_idle: payload.is_idle,
-        idle_seconds: idleSeconds,
+      onCaptureQueueFailed?.({
+        kind: "activity_duration_patch",
+        payload: {
+          activity_id: lastActivityId,
+          duration_seconds: intervalSeconds,
+          is_idle: payload.is_idle,
+          idle_seconds: idleSeconds,
+        },
       });
 
       logger.info("ACTIVITY DURATION QUEUED");
@@ -205,9 +202,12 @@ function createTrackingController({
     /*
      * Nouvelle activité.
      *
-     * L'écriture réseau est déléguée à trackingQueue.
+     * L'écriture réseau est déléguée à la file persistante du runtime.
      */
-    addActivityPostFromPayload(payload);
+    onCaptureQueueFailed?.({
+      kind: "activity_post",
+      payload,
+    });
 
     /*
      * L'ID réel n'est pas connu avant le flush du batch.
@@ -319,7 +319,10 @@ function createTrackingController({
       idle_seconds: getIdleSeconds(),
     };
 
-    addWindowLogsPost(windowsPayload);
+    onCaptureQueueFailed?.({
+      kind: "activity_windows_post",
+      payload: windowsPayload,
+    });
 
     logger.info("WINDOW LOGS QUEUED", {
       reason: hasChanged

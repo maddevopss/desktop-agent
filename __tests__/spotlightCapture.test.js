@@ -92,6 +92,28 @@ describe("captureQueue — captures de decharge mentale", () => {
     expect(queue.getCaptureQueueSummary().cachedCaptures).toBe(1);
   });
 
+  test("notifie une seule fois l'expiration de session apres un 401 du batch", async () => {
+    const onAuthExpired = jest.fn();
+    mockAxios.post.mockResolvedValue({ status: 401, data: { message: "expired" } });
+    const queue = createCaptureQueue({
+      apiUrl: "https://api.test",
+      app: { getPath: () => tmpDir },
+      getCurrentToken: () => "token-valide",
+      isUsableAccessToken: () => true,
+      logger: silentLogger,
+      isQuitting: () => false,
+      onAuthExpired,
+    });
+
+    queue.pushCaptureForLater("activity_post", { app_name: "Code" });
+    await queue.flushCaptureQueueIfPossible();
+    await queue.flushCaptureQueueIfPossible();
+    queue.stop();
+
+    expect(onAuthExpired).toHaveBeenCalledTimes(1);
+    expect(queue.getCaptureQueueSummary().cachedCaptures).toBe(1);
+  });
+
   test("sacrifie les captures d'activite avant les idees quand la file sature", () => {
     process.env.AGENT_CAPTURE_QUEUE_MAX_ITEMS = "3";
     jest.resetModules();
@@ -118,116 +140,58 @@ describe("captureQueue — captures de decharge mentale", () => {
 });
 
 // ============================================================
-// main.js : IPC de capture et liberation du raccourci global
+// Contrat IPC et cycle de vie du raccourci global
 // ============================================================
 
-describe("main — Spotlight", () => {
-  const ipcHandlers = {};
-  const appHandlers = {};
-  let mockAxiosPost;
-  let mockGlobalShortcut;
-  let mockQueuePush;
+describe("Spotlight contracts", () => {
+  test("expose seulement les canaux Spotlight autorises", () => {
+    const { INVOKE_CHANNELS } = require("../src/shared/ipcChannels");
 
-  function loadMain() {
+    expect(INVOKE_CHANNELS).toContain("send-brain-dump");
+    expect(INVOKE_CHANNELS).toContain("hide-brain-dump-widget");
+    expect(INVOKE_CHANNELS).not.toContain("capture-idea");
+    expect(INVOKE_CHANNELS).not.toContain("close-spotlight");
+  });
+
+  test("enregistre et libere le raccourci global lors de l'arret", () => {
     jest.resetModules();
-    for (const key of Object.keys(ipcHandlers)) delete ipcHandlers[key];
-    for (const key of Object.keys(appHandlers)) delete appHandlers[key];
 
-    mockAxiosPost = jest.fn();
-    mockQueuePush = jest.fn(() => true);
-    mockGlobalShortcut = {
+    const appHandlers = {};
+    const globalShortcut = {
       register: jest.fn(() => true),
       unregisterAll: jest.fn(),
     };
 
-    jest.doMock("axios", () => ({ post: mockAxiosPost, delete: jest.fn() }));
-
     jest.doMock("electron", () => ({
       app: {
-        isPackaged: false,
-        getPath: jest.fn(() => "/tmp/chronomad-test"),
-        getAppPath: jest.fn(() => "/tmp/chronomad-test-app"),
-        whenReady: jest.fn(() => ({ then: jest.fn() })),
         on: jest.fn((event, handler) => {
           appHandlers[event] = handler;
         }),
-        quit: jest.fn(),
+        setAsDefaultProtocolClient: jest.fn(),
       },
-      BrowserWindow: jest.fn(),
-      ipcMain: {
-        handle: jest.fn((channel, handler) => {
-          ipcHandlers[channel] = handler;
-        }),
-      },
-      Tray: jest.fn(),
-      Menu: { buildFromTemplate: jest.fn(() => ({})) },
-      powerMonitor: {
-        getSystemIdleTime: jest.fn(() => 0),
-        getSystemIdleState: jest.fn(() => "active"),
-      },
-      globalShortcut: mockGlobalShortcut,
+      globalShortcut,
+      powerMonitor: { on: jest.fn() },
     }));
 
-    jest.doMock("../src/main/captureQueue", () => ({
-      CAPTURE_KIND_BRAIN_DUMP: "brain_dump_capture",
-      createCaptureQueue: jest.fn(() => ({
-        pushCaptureForLater: mockQueuePush,
-        flushCaptureQueueIfPossible: jest.fn(async () => ({ flushed: 0 })),
-        getCaptureQueueSummary: jest.fn(() => ({ cachedCaptures: 0 })),
-        stop: jest.fn(),
-      })),
-    }));
+    const {
+      BRAIN_DUMP_SHORTCUTS,
+      setupLifecycleEvents,
+    } = require("../src/main/appLifecycle");
 
-    jest.doMock("../src/main/tracking", () => ({
-      createTrackingController: jest.fn(() => ({
-        isTracking: () => false,
-        startTracking: jest.fn(),
-        stopTracking: jest.fn(),
-      })),
-    }));
-
-    jest.doMock("../src/main/windowScanner", () => ({
-      getOpenWindows: jest.fn(async () => []),
-    }));
-
-    require("../main");
-  }
-
-  beforeEach(() => {
-    loadMain();
-  });
-
-  test("expose les canaux du Spotlight", () => {
-    expect(typeof ipcHandlers["capture-idea"]).toBe("function");
-    expect(typeof ipcHandlers["close-spotlight"]).toBe("function");
-  });
-
-  test("met l'idee en file quand aucun token utilisable n'est disponible", async () => {
-    const result = await ipcHandlers["capture-idea"](null, "penser a payer l'hydro");
-
-    // Pas de token en environnement de test : la capture ne doit pas etre perdue pour autant.
-    expect(result).toEqual({ ok: true, queued: true });
-    expect(mockQueuePush).toHaveBeenCalledWith("brain_dump_capture", {
-      raw_text: "penser a payer l'hydro",
-      source: "spotlight",
+    setupLifecycleEvents({
+      trackingCallbacks: { startTracking: jest.fn(), stopTracking: jest.fn() },
+      widgetCallbacks: { toggleBrainDumpWidget: jest.fn() },
+      handleProtocolUrl: jest.fn(),
     });
-    expect(mockAxiosPost).not.toHaveBeenCalled();
-  });
 
-  test("ignore une saisie vide sans rien envoyer ni mettre en file", async () => {
-    const result = await ipcHandlers["capture-idea"](null, "   ");
+    expect(globalShortcut.register).toHaveBeenCalledWith(
+      BRAIN_DUMP_SHORTCUTS[0],
+      expect.any(Function),
+    );
+    expect(typeof appHandlers["will-quit"]).toBe("function");
 
-    expect(result).toEqual({ ok: false, queued: false });
-    expect(mockQueuePush).not.toHaveBeenCalled();
-    expect(mockAxiosPost).not.toHaveBeenCalled();
-  });
+    appHandlers["will-quit"]();
 
-  test("libere le raccourci global a la fermeture", () => {
-    expect(typeof appHandlers["before-quit"]).toBe("function");
-
-    appHandlers["before-quit"]();
-
-    // Un accelerateur non libere reste reserve au niveau systeme apres la sortie.
-    expect(mockGlobalShortcut.unregisterAll).toHaveBeenCalled();
+    expect(globalShortcut.unregisterAll).toHaveBeenCalledTimes(1);
   });
 });
