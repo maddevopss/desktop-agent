@@ -127,6 +127,7 @@ const desktopRuntime = createDesktopRuntimeBootstrap({
   isUsableAccessToken,
   logger,
   isQuitting: () => isQuitting,
+  onAuthExpired: handleAuthExpired,
   onQueueStatsChanged: (stats) => {
     const mw = windowManager.getMainWindow();
     if (mw && !mw.isDestroyed()) {
