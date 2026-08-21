@@ -43,6 +43,12 @@ L’agent desktop doit rester volontaire, transparent, désactivable, proportion
 
 Il ne doit pas collecter par défaut : caméra, microphone, capture d’écran permanente, enregistrement brut du clavier, biométrie, lecture émotionnelle, inférence médicale, profilage externe, comparaison entre utilisateurs ou score de normalité.
 
+## Documentation locale
+
+L'index des limites, procédures de diffusion et preuves est dans
+[docs/README.md](docs/README.md). Toute capacité locale doit être validée pour
+la version réellement distribuée.
+
 ## Prérequis
 
 - Node.js compatible avec Electron 43
